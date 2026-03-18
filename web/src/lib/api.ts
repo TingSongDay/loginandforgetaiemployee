@@ -112,6 +112,16 @@ export function getStatus(): Promise<StatusResponse> {
   return apiFetch<StatusResponse>('/api/status');
 }
 
+export function postStationWorkerAction(
+  workerId: string,
+  action: 'pause' | 'resume' | 'mark-login-complete' | 'mark-challenge-complete',
+): Promise<void> {
+  return apiFetch<void>(`/api/station/workers/${encodeURIComponent(workerId)}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
 export function getHealth(): Promise<HealthSnapshot> {
   return apiFetch<HealthSnapshot | { health: HealthSnapshot }>('/api/health').then((data) =>
     unwrapField(data, 'health'),

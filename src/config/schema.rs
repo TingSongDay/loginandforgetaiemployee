@@ -1178,12 +1178,21 @@ pub struct ManagedBrowserConfig {
     /// Fixed zoom percentage.
     #[serde(default = "default_station_zoom_percent")]
     pub zoom_percent: u16,
+    /// Fixed display scaling contract for kiosk calibration.
+    #[serde(default = "default_station_display_scale_mode")]
+    pub display_scale_mode: String,
     /// Fixed window origin X for the managed tile.
     #[serde(default)]
     pub window_origin_x: i32,
     /// Fixed window origin Y for the managed tile.
     #[serde(default)]
     pub window_origin_y: i32,
+    /// Whether the runtime should snap the window back before interaction.
+    #[serde(default = "default_true")]
+    pub snap_back_before_interaction: bool,
+    /// Whether the runtime should run selector preflight checks before interaction.
+    #[serde(default = "default_true")]
+    pub preflight_verification_enabled: bool,
 }
 
 fn default_station_browser_locale() -> String {
@@ -1210,6 +1219,10 @@ fn default_station_zoom_percent() -> u16 {
     100
 }
 
+fn default_station_display_scale_mode() -> String {
+    "fixed".into()
+}
+
 impl Default for ManagedBrowserConfig {
     fn default() -> Self {
         Self {
@@ -1221,8 +1234,43 @@ impl Default for ManagedBrowserConfig {
             viewport_width: default_station_viewport_width(),
             viewport_height: default_station_viewport_height(),
             zoom_percent: default_station_zoom_percent(),
+            display_scale_mode: default_station_display_scale_mode(),
             window_origin_x: 0,
             window_origin_y: 0,
+            snap_back_before_interaction: true,
+            preflight_verification_enabled: true,
+        }
+    }
+}
+
+/// Right-side operator panel configuration for the station dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct OperatorPanelConfig {
+    /// Whether the right-side operator surface is enabled.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Rendering/runtime mode for the panel surface.
+    #[serde(default = "default_operator_panel_runtime_mode")]
+    pub runtime_mode: String,
+    /// Local route or shell path for the operator panel.
+    #[serde(default = "default_operator_panel_path")]
+    pub local_url_or_path: String,
+}
+
+fn default_operator_panel_runtime_mode() -> String {
+    "web_dashboard".into()
+}
+
+fn default_operator_panel_path() -> String {
+    "/_app".into()
+}
+
+impl Default for OperatorPanelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            runtime_mode: default_operator_panel_runtime_mode(),
+            local_url_or_path: default_operator_panel_path(),
         }
     }
 }
@@ -1274,6 +1322,9 @@ pub struct StationConfig {
     /// Optional operator display name for status surfaces.
     #[serde(default)]
     pub operator_display_name: Option<String>,
+    /// Right-side NeoHUman operator surface configuration.
+    #[serde(default)]
+    pub right_panel: OperatorPanelConfig,
     /// Worker slots in the visible station layout.
     #[serde(default = "default_station_workers")]
     pub workers: Vec<StationWorkerConfig>,
@@ -1338,6 +1389,7 @@ impl Default for StationConfig {
             manual_intervention_timeout_secs: default_station_manual_intervention_timeout_secs(),
             reply_mode: default_station_reply_mode(),
             operator_display_name: None,
+            right_panel: OperatorPanelConfig::default(),
             workers: default_station_workers(),
         }
     }
@@ -4644,6 +4696,12 @@ impl Config {
         if self.station.reply_mode.trim().is_empty() {
             anyhow::bail!("station.reply_mode must not be empty");
         }
+        if self.station.right_panel.runtime_mode.trim().is_empty() {
+            anyhow::bail!("station.right_panel.runtime_mode must not be empty");
+        }
+        if self.station.right_panel.local_url_or_path.trim().is_empty() {
+            anyhow::bail!("station.right_panel.local_url_or_path must not be empty");
+        }
         if self.station.workers.is_empty() {
             anyhow::bail!("station.workers must contain at least one worker");
         }
@@ -4692,6 +4750,11 @@ impl Config {
             if worker.managed_browser.zoom_percent == 0 {
                 anyhow::bail!(
                     "station.workers[{i}].managed_browser.zoom_percent must be greater than 0"
+                );
+            }
+            if worker.managed_browser.display_scale_mode.trim().is_empty() {
+                anyhow::bail!(
+                    "station.workers[{i}].managed_browser.display_scale_mode must not be empty"
                 );
             }
             if worker

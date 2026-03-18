@@ -5,8 +5,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+pub mod whatsapp;
 pub mod wechat;
 
+pub use whatsapp::WhatsAppWebDriver;
+#[allow(unused_imports)]
 pub use wechat::WeChatWebDriver;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,6 +25,18 @@ pub enum PlatformLoginState {
 pub enum PlatformChallengeState {
     Clear,
     ChallengeRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlatformWorkspaceState {
+    LoginRequired,
+    ChatListVisible,
+    ChatOpen,
+    SearchOpen,
+    ModalOpen,
+    UnexpectedOverlay,
+    ErrorOrUnknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +57,8 @@ pub struct PlatformMessageNode {
 pub struct PlatformSelectorMap {
     pub conversation_list: String,
     pub conversation_item: String,
+    pub search_input: String,
+    pub active_chat_header: String,
     pub message_list: String,
     pub incoming_message: String,
     pub outgoing_message: String,
@@ -49,6 +66,8 @@ pub struct PlatformSelectorMap {
     pub send_button: String,
     pub login_markers: Vec<String>,
     pub challenge_markers: Vec<String>,
+    pub modal_markers: Vec<String>,
+    pub overlay_markers: Vec<String>,
 }
 
 impl PlatformSelectorMap {
@@ -56,6 +75,8 @@ impl PlatformSelectorMap {
         for (name, selector) in [
             ("conversation_list", &self.conversation_list),
             ("conversation_item", &self.conversation_item),
+            ("search_input", &self.search_input),
+            ("active_chat_header", &self.active_chat_header),
             ("message_list", &self.message_list),
             ("incoming_message", &self.incoming_message),
             ("outgoing_message", &self.outgoing_message),
@@ -86,6 +107,20 @@ impl PlatformSelectorMap {
             .any(|selector| selector.trim().is_empty())
         {
             bail!("platform challenge markers must not contain empty selectors");
+        }
+        if self
+            .modal_markers
+            .iter()
+            .any(|selector| selector.trim().is_empty())
+        {
+            bail!("platform modal markers must not contain empty selectors");
+        }
+        if self
+            .overlay_markers
+            .iter()
+            .any(|selector| selector.trim().is_empty())
+        {
+            bail!("platform overlay markers must not contain empty selectors");
         }
 
         Ok(())
@@ -132,6 +167,50 @@ pub trait MessagingPlatformDriver: Send + Sync {
         session: &ManagedBrowserSession,
     ) -> Result<PlatformChallengeState>;
 
+    async fn detect_workspace_state(
+        &self,
+        runtime: &dyn ManagedBrowserRuntime,
+        session: &ManagedBrowserSession,
+    ) -> Result<PlatformWorkspaceState> {
+        if self.detect_login_state(runtime, session).await? != PlatformLoginState::LoggedIn {
+            return Ok(PlatformWorkspaceState::LoginRequired);
+        }
+
+        if self.detect_challenge_state(runtime, session).await?
+            == PlatformChallengeState::ChallengeRequired
+        {
+            return Ok(PlatformWorkspaceState::ModalOpen);
+        }
+
+        for selector in &self.selector_map().modal_markers {
+            if selector_is_visible(runtime, session, selector).await? {
+                return Ok(PlatformWorkspaceState::ModalOpen);
+            }
+        }
+
+        for selector in &self.selector_map().overlay_markers {
+            if selector_is_visible(runtime, session, selector).await? {
+                return Ok(PlatformWorkspaceState::UnexpectedOverlay);
+            }
+        }
+
+        if selector_is_visible(runtime, session, &self.selector_map().reply_input).await?
+            && selector_is_visible(runtime, session, &self.selector_map().message_list).await?
+        {
+            return Ok(PlatformWorkspaceState::ChatOpen);
+        }
+
+        if selector_is_visible(runtime, session, &self.selector_map().search_input).await? {
+            return Ok(PlatformWorkspaceState::SearchOpen);
+        }
+
+        if selector_is_visible(runtime, session, &self.selector_map().conversation_list).await? {
+            return Ok(PlatformWorkspaceState::ChatListVisible);
+        }
+
+        Ok(PlatformWorkspaceState::ErrorOrUnknown)
+    }
+
     async fn list_visible_messages(
         &self,
         runtime: &dyn ManagedBrowserRuntime,
@@ -172,5 +251,38 @@ pub trait MessagingPlatformDriver: Send + Sync {
 }
 
 pub fn mvp_platform_driver() -> Arc<dyn MessagingPlatformDriver> {
-    Arc::new(WeChatWebDriver::default())
+    Arc::new(WhatsAppWebDriver::default())
+}
+
+pub(crate) async fn selector_is_visible(
+    runtime: &dyn ManagedBrowserRuntime,
+    session: &ManagedBrowserSession,
+    selector: &str,
+) -> Result<bool> {
+    let result = runtime.is_visible(session, selector).await?;
+    if !result.success {
+        return Ok(false);
+    }
+
+    let output = result.output.trim();
+    if output.eq_ignore_ascii_case("true") {
+        return Ok(true);
+    }
+    if output.eq_ignore_ascii_case("false") || output.is_empty() {
+        return Ok(false);
+    }
+
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(output) {
+        if let Some(value) = parsed.as_bool() {
+            return Ok(value);
+        }
+        if let Some(value) = parsed.get("visible").and_then(serde_json::Value::as_bool) {
+            return Ok(value);
+        }
+        if let Some(value) = parsed.get("data").and_then(serde_json::Value::as_bool) {
+            return Ok(value);
+        }
+    }
+
+    Ok(false)
 }

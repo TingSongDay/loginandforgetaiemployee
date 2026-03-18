@@ -1,15 +1,23 @@
 use zeroclaw::config::{Config, StationTilePosition};
 
 #[test]
-fn station_config_defaults_to_two_visible_workers() {
+fn station_config_defaults_to_kiosk_left_surface_and_operator_panel() {
     let config = Config::default();
     let workers = &config.station.workers;
 
     assert!(!config.station.enabled);
     assert_eq!(config.station.station_name, "NeoHUman Station");
     assert_eq!(workers.len(), 2);
+    assert_eq!(workers[0].id, "worker_a");
+    assert_eq!(workers[0].managed_browser.viewport_width, 960);
+    assert_eq!(workers[0].managed_browser.viewport_height, 900);
+    assert!(workers[0].managed_browser.snap_back_before_interaction);
+    assert!(workers[0].managed_browser.preflight_verification_enabled);
     assert_eq!(workers[0].tile_position, StationTilePosition::Left);
     assert_eq!(workers[1].tile_position, StationTilePosition::Right);
+    assert!(config.station.right_panel.enabled);
+    assert_eq!(config.station.right_panel.runtime_mode, "web_dashboard");
+    assert_eq!(config.station.right_panel.local_url_or_path, "/_app");
 }
 
 #[test]

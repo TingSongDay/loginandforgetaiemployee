@@ -90,12 +90,12 @@ fn station_supervisor_can_surface_worker_specific_intervention_state() {
 }
 
 #[test]
-fn mvp_platform_driver_defaults_to_wechat() {
+fn mvp_platform_driver_defaults_to_whatsapp() {
     let driver = mvp_platform_driver();
 
     driver
         .validate_selectors()
         .expect("selectors should validate");
-    assert_eq!(driver.platform_id(), "wechat_web");
-    assert_eq!(driver.platform_name(), "WeChat Web");
+    assert_eq!(driver.platform_id(), "whatsapp_web");
+    assert_eq!(driver.platform_name(), "WhatsApp Web");
 }

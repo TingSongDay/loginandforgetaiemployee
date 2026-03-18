@@ -7,9 +7,11 @@ import {
   Activity,
   DollarSign,
   Radio,
+  MonitorSmartphone,
+  MessageSquareWarning,
 } from 'lucide-react';
 import type { StatusResponse, CostSummary } from '@/types/api';
-import { getStatus, getCost } from '@/lib/api';
+import { getStatus, getCost, postStationWorkerAction } from '@/lib/api';
 
 function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
@@ -22,6 +24,13 @@ function formatUptime(seconds: number): string {
 
 function formatUSD(value: number): string {
   return `$${value.toFixed(4)}`;
+}
+
+function formatTimestamp(value: string | null): string {
+  if (!value) return 'Not yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function healthColor(status: string): string {
@@ -56,15 +65,36 @@ export default function Dashboard() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [cost, setCost] = useState<CostSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stationAction, setStationAction] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = () => {
     Promise.all([getStatus(), getCost()])
       .then(([s, c]) => {
         setStatus(s);
         setCost(c);
+        setError(null);
       })
       .catch((err) => setError(err.message));
+  };
+
+  useEffect(() => {
+    refresh();
   }, []);
+
+  async function runStationAction(
+    workerId: string,
+    action: 'pause' | 'resume' | 'mark-login-complete' | 'mark-challenge-complete',
+  ) {
+    try {
+      setStationAction(action);
+      await postStationWorkerAction(workerId, action);
+      refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStationAction(null);
+    }
+  }
 
   if (error) {
     return (
@@ -85,9 +115,187 @@ export default function Dashboard() {
   }
 
   const maxCost = Math.max(cost.session_cost_usd, cost.daily_cost_usd, cost.monthly_cost_usd, 0.001);
+  const leftSurface = status.station.left_surface;
 
   return (
     <div className="p-6 space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <MonitorSmartphone className="h-5 w-5 text-blue-400" />
+              <h2 className="text-base font-semibold text-white">NeoHUman Station</h2>
+            </div>
+            <span className="text-xs uppercase tracking-wide text-gray-400">
+              {status.station.enabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm text-gray-400">Left Automation Surface</p>
+                  <p className="text-lg font-semibold text-white">
+                    {leftSurface?.display_name ?? 'Not configured'}
+                  </p>
+                </div>
+                <span className="text-xs uppercase tracking-wide text-gray-400">
+                  {leftSurface?.session_status ?? 'idle'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-500">Browser</p>
+                  <p className="text-white">{leftSurface?.backend ?? 'Not launched'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Geometry</p>
+                  <p className="text-white">
+                    {leftSurface
+                      ? `${leftSurface.window_origin_x},${leftSurface.window_origin_y} • ${leftSurface.viewport_width}x${leftSurface.viewport_height}`
+                      : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Last Inbound</p>
+                  <p className="text-white">{formatTimestamp(leftSurface?.last_inbound_message_at ?? null)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Last Reply</p>
+                  <p className="text-white">{formatTimestamp(leftSurface?.last_reply_sent_at ?? null)}</p>
+                </div>
+              </div>
+              <div className="rounded-lg bg-gray-900/80 border border-gray-800 p-3 text-sm">
+                <p className="text-gray-400">Recovery / Attention</p>
+                <p className="text-white mt-1">
+                  {leftSurface?.attention_reason ??
+                    leftSurface?.last_error ??
+                    'No intervention requested'}
+                </p>
+                {leftSurface?.pending_reply_text && (
+                  <p className="text-blue-300 mt-2">
+                    Pending reply: {leftSurface.pending_reply_text}
+                  </p>
+                )}
+              </div>
+              {leftSurface && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => runStationAction(leftSurface.worker_id, 'pause')}
+                    disabled={stationAction !== null}
+                    className="px-3 py-2 rounded-lg bg-amber-600/20 border border-amber-500/30 text-amber-200 text-sm disabled:opacity-50"
+                  >
+                    Pause
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runStationAction(leftSurface.worker_id, 'resume')}
+                    disabled={stationAction !== null}
+                    className="px-3 py-2 rounded-lg bg-green-600/20 border border-green-500/30 text-green-200 text-sm disabled:opacity-50"
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runStationAction(leftSurface.worker_id, 'mark-login-complete')}
+                    disabled={stationAction !== null}
+                    className="px-3 py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-200 text-sm disabled:opacity-50"
+                  >
+                    Mark Login Complete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runStationAction(leftSurface.worker_id, 'mark-challenge-complete')}
+                    disabled={stationAction !== null}
+                    className="px-3 py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-200 text-sm disabled:opacity-50"
+                  >
+                    Mark Challenge Complete
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-4 space-y-3">
+              <div>
+                <p className="text-sm text-gray-400">Right Operator Panel</p>
+                <p className="text-lg font-semibold text-white">
+                  {status.station.right_panel.runtime_mode}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 text-sm">
+                <div>
+                  <p className="text-gray-500">Path</p>
+                  <p className="text-white">{status.station.right_panel.local_url_or_path}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Geometry</p>
+                  <p className="text-white">
+                    {status.station.right_panel.geometry_managed ? 'Managed' : 'Free-positioned'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Operator</p>
+                  <p className="text-white">
+                    {status.station.operator_display_name ?? 'Unspecified'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Reply Mode</p>
+                  <p className="text-white">{status.station.reply_mode}</p>
+                </div>
+              </div>
+              <div className="rounded-lg bg-gray-900/80 border border-gray-800 p-3 text-sm">
+                <div className="flex items-center gap-2 text-gray-400">
+                  <MessageSquareWarning className="h-4 w-4 text-blue-400" />
+                  Control surface actions
+                </div>
+                <p className="text-white mt-2">
+                  {status.station.right_panel.control_actions.join(', ')}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="h-5 w-5 text-blue-400" />
+            <h2 className="text-base font-semibold text-white">Kiosk Contract</h2>
+          </div>
+          <div className="space-y-3 text-sm">
+            <div className="rounded-lg bg-gray-800/50 p-3">
+              <p className="text-gray-400">Snap-back before interaction</p>
+              <p className="text-white mt-1">
+                {leftSurface?.snap_back_before_interaction ? 'Enabled' : 'Disabled'}
+              </p>
+            </div>
+            <div className="rounded-lg bg-gray-800/50 p-3">
+              <p className="text-gray-400">Preflight verification</p>
+              <p className="text-white mt-1">
+                {leftSurface?.preflight_verification_enabled ? 'Enabled' : 'Disabled'}
+              </p>
+            </div>
+            <div className="rounded-lg bg-gray-800/50 p-3">
+              <p className="text-gray-400">Display scale mode</p>
+              <p className="text-white mt-1">{leftSurface?.display_scale_mode ?? 'N/A'}</p>
+            </div>
+            <div className="rounded-lg bg-gray-800/50 p-3">
+              <p className="text-gray-400">Actual placement</p>
+              <p className="text-white mt-1">
+                {leftSurface &&
+                leftSurface.actual_window_origin_x !== null &&
+                leftSurface.actual_window_origin_y !== null &&
+                leftSurface.actual_viewport_width !== null &&
+                leftSurface.actual_viewport_height !== null
+                  ? `${leftSurface.actual_window_origin_x},${leftSurface.actual_window_origin_y} • ${leftSurface.actual_viewport_width}x${leftSurface.actual_viewport_height}`
+                  : 'Pending verification'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Status Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">

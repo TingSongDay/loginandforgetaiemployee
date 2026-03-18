@@ -40,6 +40,9 @@ pub struct ManagedBrowserLaunchPlan {
     pub user_agent: String,
     pub browser_binary_path: Option<String>,
     pub headless: bool,
+    pub display_scale_mode: String,
+    pub snap_back_before_interaction: bool,
+    pub preflight_verification_enabled: bool,
     pub user_data_dir: PathBuf,
     pub session_name: String,
 }
@@ -60,6 +63,16 @@ pub struct ManagedBrowserLaunchReport {
     pub timezone: String,
     pub user_agent: String,
     pub zoom_percent: u16,
+    #[serde(default)]
+    pub actual_window_origin_x: i32,
+    #[serde(default)]
+    pub actual_window_origin_y: i32,
+    #[serde(default)]
+    pub actual_viewport_width: u32,
+    #[serde(default)]
+    pub actual_viewport_height: u32,
+    #[serde(default)]
+    pub display_scale_mode: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,6 +82,23 @@ pub struct ManagedBrowserSession {
     pub placement: TilePlacement,
     pub launch_plan: ManagedBrowserLaunchPlan,
     pub launch_report: ManagedBrowserLaunchReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedBrowserPlacementCheck {
+    pub matches_canonical: bool,
+    pub window_origin_x: i32,
+    pub window_origin_y: i32,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedBrowserPreflightCheck {
+    pub passed: bool,
+    pub placement: ManagedBrowserPlacementCheck,
+    pub visible_selectors: Vec<String>,
+    pub missing_selectors: Vec<String>,
 }
 
 #[async_trait]
@@ -109,6 +139,28 @@ pub trait ManagedBrowserRuntime: Send + Sync {
     ) -> Result<ToolResult>;
 
     async fn screenshot(&self, session: &ManagedBrowserSession, path: &str) -> Result<ToolResult>;
+
+    async fn ensure_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserSession>;
+
+    async fn verify_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserPlacementCheck>;
+
+    async fn preflight_check(
+        &self,
+        session: &ManagedBrowserSession,
+        required_selectors: &[String],
+    ) -> Result<ManagedBrowserPreflightCheck>;
+
+    async fn capture_recovery_artifacts(
+        &self,
+        session: &ManagedBrowserSession,
+        artifact_prefix: &str,
+    ) -> Result<Vec<String>>;
 
     async fn move_to_tile(
         &self,
@@ -245,6 +297,11 @@ impl BrowserToolRuntime {
             timezone: plan.timezone.clone(),
             user_agent: plan.user_agent.clone(),
             zoom_percent: plan.zoom_percent,
+            actual_window_origin_x: plan.window_origin_x,
+            actual_window_origin_y: plan.window_origin_y,
+            actual_viewport_width: plan.viewport_width,
+            actual_viewport_height: plan.viewport_height,
+            display_scale_mode: plan.display_scale_mode.clone(),
         }
     }
 }
@@ -380,6 +437,107 @@ impl ManagedBrowserRuntime for BrowserToolRuntime {
             .await
     }
 
+    async fn ensure_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserSession> {
+        if !session.launch_plan.snap_back_before_interaction {
+            return Ok(session.clone());
+        }
+
+        let tool = self.session_tool(session)?;
+        tool.set_window_placement(
+            session.launch_plan.window_origin_x,
+            session.launch_plan.window_origin_y,
+            session.launch_plan.viewport_width,
+            session.launch_plan.viewport_height,
+            session.launch_plan.zoom_percent,
+            &session.launch_plan.locale,
+        )
+        .await?;
+
+        let mut updated = session.clone();
+        let placement = self.verify_canonical_placement(&updated).await?;
+        updated.launch_report.actual_window_origin_x = placement.window_origin_x;
+        updated.launch_report.actual_window_origin_y = placement.window_origin_y;
+        updated.launch_report.actual_viewport_width = placement.viewport_width;
+        updated.launch_report.actual_viewport_height = placement.viewport_height;
+        self.persist_launch_report(&updated).await?;
+        Ok(updated)
+    }
+
+    async fn verify_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserPlacementCheck> {
+        let tool = self.session_tool(session)?;
+        let actual = tool
+            .inspect_window_placement(
+                session.launch_plan.window_origin_x,
+                session.launch_plan.window_origin_y,
+                session.launch_plan.viewport_width,
+                session.launch_plan.viewport_height,
+            )
+            .await?;
+
+        Ok(ManagedBrowserPlacementCheck {
+            matches_canonical: actual.window_origin_x == session.launch_plan.window_origin_x
+                && actual.window_origin_y == session.launch_plan.window_origin_y
+                && actual.viewport_width == session.launch_plan.viewport_width
+                && actual.viewport_height == session.launch_plan.viewport_height,
+            window_origin_x: actual.window_origin_x,
+            window_origin_y: actual.window_origin_y,
+            viewport_width: actual.viewport_width,
+            viewport_height: actual.viewport_height,
+        })
+    }
+
+    async fn preflight_check(
+        &self,
+        session: &ManagedBrowserSession,
+        required_selectors: &[String],
+    ) -> Result<ManagedBrowserPreflightCheck> {
+        let placement = self.verify_canonical_placement(session).await?;
+        let mut visible_selectors = Vec::new();
+        let mut missing_selectors = Vec::new();
+
+        if session.launch_plan.preflight_verification_enabled {
+            for selector in required_selectors {
+                let result = self.is_visible(session, selector).await?;
+                let visible = visibility_from_tool_result(&result);
+                if visible {
+                    visible_selectors.push(selector.clone());
+                } else {
+                    missing_selectors.push(selector.clone());
+                }
+            }
+        }
+
+        let passed = placement.matches_canonical
+            && (!session.launch_plan.preflight_verification_enabled || missing_selectors.is_empty());
+
+        Ok(ManagedBrowserPreflightCheck {
+            passed,
+            placement,
+            visible_selectors,
+            missing_selectors,
+        })
+    }
+
+    async fn capture_recovery_artifacts(
+        &self,
+        session: &ManagedBrowserSession,
+        artifact_prefix: &str,
+    ) -> Result<Vec<String>> {
+        let path = session
+            .launch_plan
+            .user_data_dir
+            .join(format!("{artifact_prefix}-recovery.png"));
+        let path_str = path.to_string_lossy().to_string();
+        let _ = self.screenshot(session, &path_str).await?;
+        Ok(vec![path_str])
+    }
+
     async fn move_to_tile(
         &self,
         session: &ManagedBrowserSession,
@@ -391,6 +549,10 @@ impl ManagedBrowserRuntime for BrowserToolRuntime {
         updated.launch_report.window_origin_y = placement.window_origin_y;
         updated.launch_report.viewport_width = placement.viewport_width;
         updated.launch_report.viewport_height = placement.viewport_height;
+        updated.launch_report.actual_window_origin_x = placement.window_origin_x;
+        updated.launch_report.actual_window_origin_y = placement.window_origin_y;
+        updated.launch_report.actual_viewport_width = placement.viewport_width;
+        updated.launch_report.actual_viewport_height = placement.viewport_height;
         self.persist_launch_report(&updated).await?;
         Ok(updated)
     }
@@ -455,6 +617,9 @@ pub fn build_launch_plan(
         user_agent: managed.user_agent.clone(),
         browser_binary_path: managed.browser_binary_path.clone(),
         headless: managed.headless,
+        display_scale_mode: managed.display_scale_mode.clone(),
+        snap_back_before_interaction: managed.snap_back_before_interaction,
+        preflight_verification_enabled: managed.preflight_verification_enabled,
         user_data_dir: config
             .workspace_dir
             .join("station")
@@ -462,4 +627,29 @@ pub fn build_launch_plan(
             .join(&worker.profile_name),
         session_name: worker.profile_name.clone(),
     })
+}
+
+fn visibility_from_tool_result(result: &ToolResult) -> bool {
+    if !result.success {
+        return false;
+    }
+
+    let output = result.output.trim();
+    if output.eq_ignore_ascii_case("true") {
+        return true;
+    }
+
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(output) {
+        if let Some(value) = parsed.as_bool() {
+            return value;
+        }
+        if let Some(value) = parsed.get("visible").and_then(serde_json::Value::as_bool) {
+            return value;
+        }
+        if let Some(value) = parsed.get("data").and_then(serde_json::Value::as_bool) {
+            return value;
+        }
+    }
+
+    false
 }

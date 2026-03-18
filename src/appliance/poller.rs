@@ -3,7 +3,10 @@ use crate::appliance::{
     dedupe_store::DedupeStore,
     detector::detect_new_inbound_message,
     messages::normalize_message_records,
-    platforms::{MessagingPlatformDriver, PlatformChallengeState, PlatformLoginState},
+    platforms::{
+        MessagingPlatformDriver, PlatformChallengeState, PlatformLoginState,
+        PlatformWorkspaceState,
+    },
     reply_engine::ReplyEngine,
     session_store::SessionStore,
     state::{
@@ -157,6 +160,12 @@ async fn poll_worker_once(
     reply_engine: &ReplyEngine,
     supervisor: &mut StationSupervisor,
 ) -> Result<bool> {
+    let session = if worker.managed_browser.snap_back_before_interaction {
+        runtime.ensure_canonical_placement(session).await?
+    } else {
+        session.clone()
+    };
+
     let metadata = session_store
         .load_or_initialize_worker(worker, &session.launch_plan)
         .await?;
@@ -171,7 +180,7 @@ async fn poll_worker_once(
         return Ok(false);
     }
 
-    let login_state = platform_driver.detect_login_state(runtime, session).await?;
+    let login_state = platform_driver.detect_login_state(runtime, &session).await?;
     if login_state != PlatformLoginState::LoggedIn {
         let metadata = session_store
             .mark_worker_login_required(
@@ -192,7 +201,7 @@ async fn poll_worker_once(
     }
 
     let challenge_state = platform_driver
-        .detect_challenge_state(runtime, session)
+        .detect_challenge_state(runtime, &session)
         .await?;
     if challenge_state == PlatformChallengeState::ChallengeRequired {
         let metadata = session_store
@@ -223,8 +232,78 @@ async fn poll_worker_once(
         Some(metadata.last_successful_login_at),
     )?;
 
+    let workspace_state = platform_driver
+        .detect_workspace_state(runtime, &session)
+        .await?;
+    match workspace_state {
+        PlatformWorkspaceState::ChatListVisible
+        | PlatformWorkspaceState::ChatOpen
+        | PlatformWorkspaceState::SearchOpen => {}
+        PlatformWorkspaceState::LoginRequired => {
+            let metadata = session_store
+                .mark_worker_login_required(
+                    worker,
+                    &session.launch_plan,
+                    WorkerAttentionReason::SessionInvalid,
+                    metadata.last_successful_login_at,
+                )
+                .await?;
+            supervisor.transition_worker_with_details(
+                &worker.id,
+                WorkerRuntimeState::LoginRequired,
+                Some(metadata.status),
+                Some(metadata.attention_reason),
+                Some(metadata.last_successful_login_at),
+            )?;
+            return Ok(false);
+        }
+        PlatformWorkspaceState::ModalOpen | PlatformWorkspaceState::UnexpectedOverlay => {
+            supervisor.transition_worker_with_details(
+                &worker.id,
+                WorkerRuntimeState::Error,
+                Some(WorkerSessionStatus::Active),
+                Some(Some(WorkerAttentionReason::PlatformCheckFailed)),
+                Some(metadata.last_successful_login_at),
+            )?;
+            let _ = runtime
+                .capture_recovery_artifacts(&session, &format!("{}-workspace", worker.id))
+                .await;
+            return Ok(false);
+        }
+        PlatformWorkspaceState::ErrorOrUnknown => {
+            supervisor.transition_worker_with_details(
+                &worker.id,
+                WorkerRuntimeState::Error,
+                Some(WorkerSessionStatus::Unknown),
+                Some(Some(WorkerAttentionReason::PlatformCheckFailed)),
+                Some(metadata.last_successful_login_at),
+            )?;
+            let _ = runtime
+                .capture_recovery_artifacts(&session, &format!("{}-unknown", worker.id))
+                .await;
+            return Ok(false);
+        }
+    }
+
+    let preflight = runtime
+        .preflight_check(&session, &[platform_driver.selector_map().message_list.clone()])
+        .await?;
+    if !preflight.passed {
+        supervisor.transition_worker_with_details(
+            &worker.id,
+            WorkerRuntimeState::Error,
+            Some(WorkerSessionStatus::Unknown),
+            Some(Some(WorkerAttentionReason::PlatformCheckFailed)),
+            Some(metadata.last_successful_login_at),
+        )?;
+        let _ = runtime
+            .capture_recovery_artifacts(&session, &format!("{}-preflight", worker.id))
+            .await;
+        return Ok(false);
+    }
+
     let message_nodes = platform_driver
-        .list_visible_messages(runtime, session)
+        .list_visible_messages(runtime, &session)
         .await
         .with_context(|| format!("list visible messages for {}", worker.id))?;
     let records = normalize_message_records(&worker.id, platform_driver, &message_nodes);
@@ -261,7 +340,7 @@ async fn poll_worker_once(
         .await?;
 
     let send_result = platform_driver
-        .send_reply(runtime, session, &decision.reply_text)
+        .send_reply(runtime, &session, &decision.reply_text)
         .await;
 
     match send_result {

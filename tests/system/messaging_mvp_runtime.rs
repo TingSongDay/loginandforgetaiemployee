@@ -8,7 +8,8 @@ use zeroclaw::{
     appliance::{
         browser_runtime::{
             build_launch_plan, ManagedBrowserLaunchPlan, ManagedBrowserLaunchReport,
-            ManagedBrowserRuntime, ManagedBrowserRuntimeKind, ManagedBrowserSession,
+            ManagedBrowserPlacementCheck, ManagedBrowserPreflightCheck, ManagedBrowserRuntime,
+            ManagedBrowserRuntimeKind, ManagedBrowserSession,
         },
         initialize_station_with, mark_challenge_complete, mark_login_complete, pause_worker,
         platforms::{
@@ -73,6 +74,11 @@ impl ManagedBrowserRuntime for MockRuntime {
                 timezone: plan.timezone.clone(),
                 user_agent: plan.user_agent.clone(),
                 zoom_percent: plan.zoom_percent,
+                actual_window_origin_x: plan.window_origin_x,
+                actual_window_origin_y: plan.window_origin_y,
+                actual_viewport_width: plan.viewport_width,
+                actual_viewport_height: plan.viewport_height,
+                display_scale_mode: plan.display_scale_mode.clone(),
             },
         })
     }
@@ -135,6 +141,53 @@ impl ManagedBrowserRuntime for MockRuntime {
         Ok(ok_tool("screenshot"))
     }
 
+    async fn ensure_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserSession> {
+        Ok(session.clone())
+    }
+
+    async fn verify_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserPlacementCheck> {
+        Ok(ManagedBrowserPlacementCheck {
+            matches_canonical: true,
+            window_origin_x: session.launch_plan.window_origin_x,
+            window_origin_y: session.launch_plan.window_origin_y,
+            viewport_width: session.launch_plan.viewport_width,
+            viewport_height: session.launch_plan.viewport_height,
+        })
+    }
+
+    async fn preflight_check(
+        &self,
+        session: &ManagedBrowserSession,
+        required_selectors: &[String],
+    ) -> Result<ManagedBrowserPreflightCheck> {
+        Ok(ManagedBrowserPreflightCheck {
+            passed: true,
+            placement: ManagedBrowserPlacementCheck {
+                matches_canonical: true,
+                window_origin_x: session.launch_plan.window_origin_x,
+                window_origin_y: session.launch_plan.window_origin_y,
+                viewport_width: session.launch_plan.viewport_width,
+                viewport_height: session.launch_plan.viewport_height,
+            },
+            visible_selectors: required_selectors.to_vec(),
+            missing_selectors: Vec::new(),
+        })
+    }
+
+    async fn capture_recovery_artifacts(
+        &self,
+        _session: &ManagedBrowserSession,
+        artifact_prefix: &str,
+    ) -> Result<Vec<String>> {
+        Ok(vec![format!("{artifact_prefix}-recovery.png")])
+    }
+
     async fn move_to_tile(
         &self,
         session: &ManagedBrowserSession,
@@ -189,6 +242,8 @@ impl MessagingPlatformDriver for MockPlatformDriver {
         SELECTORS.get_or_init(|| PlatformSelectorMap {
             conversation_list: ".chat_list".into(),
             conversation_item: ".chat_item".into(),
+            search_input: ".search".into(),
+            active_chat_header: ".header".into(),
             message_list: ".box_chat".into(),
             incoming_message: ".message".into(),
             outgoing_message: ".message.me".into(),
@@ -196,6 +251,8 @@ impl MessagingPlatformDriver for MockPlatformDriver {
             send_button: ".btn_send".into(),
             login_markers: vec!["img.qrcode".into()],
             challenge_markers: vec![".dialog_ft".into()],
+            modal_markers: vec![".dialog".into()],
+            overlay_markers: vec![".mask".into()],
         })
     }
 

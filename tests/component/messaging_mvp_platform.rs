@@ -5,11 +5,12 @@ use std::collections::HashMap;
 use zeroclaw::appliance::{
     browser_runtime::{
         build_launch_plan, ManagedBrowserLaunchPlan, ManagedBrowserLaunchReport,
-        ManagedBrowserRuntime, ManagedBrowserRuntimeKind, ManagedBrowserSession,
+        ManagedBrowserPlacementCheck, ManagedBrowserPreflightCheck, ManagedBrowserRuntime,
+        ManagedBrowserRuntimeKind, ManagedBrowserSession,
     },
     platforms::{
         MessageDirection, MessagingPlatformDriver, PlatformChallengeState, PlatformLoginState,
-        PlatformMessageNode, WeChatWebDriver,
+        PlatformMessageNode, PlatformWorkspaceState, WhatsAppWebDriver, WeChatWebDriver,
     },
     tile_manager::{TileManager, TilePlacement},
 };
@@ -132,6 +133,53 @@ impl ManagedBrowserRuntime for MockRuntime {
         Ok(ok_tool("screenshot"))
     }
 
+    async fn ensure_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserSession> {
+        Ok(session.clone())
+    }
+
+    async fn verify_canonical_placement(
+        &self,
+        session: &ManagedBrowserSession,
+    ) -> Result<ManagedBrowserPlacementCheck> {
+        Ok(ManagedBrowserPlacementCheck {
+            matches_canonical: true,
+            window_origin_x: session.launch_plan.window_origin_x,
+            window_origin_y: session.launch_plan.window_origin_y,
+            viewport_width: session.launch_plan.viewport_width,
+            viewport_height: session.launch_plan.viewport_height,
+        })
+    }
+
+    async fn preflight_check(
+        &self,
+        session: &ManagedBrowserSession,
+        required_selectors: &[String],
+    ) -> Result<ManagedBrowserPreflightCheck> {
+        Ok(ManagedBrowserPreflightCheck {
+            passed: true,
+            placement: ManagedBrowserPlacementCheck {
+                matches_canonical: true,
+                window_origin_x: session.launch_plan.window_origin_x,
+                window_origin_y: session.launch_plan.window_origin_y,
+                viewport_width: session.launch_plan.viewport_width,
+                viewport_height: session.launch_plan.viewport_height,
+            },
+            visible_selectors: required_selectors.to_vec(),
+            missing_selectors: Vec::new(),
+        })
+    }
+
+    async fn capture_recovery_artifacts(
+        &self,
+        _session: &ManagedBrowserSession,
+        artifact_prefix: &str,
+    ) -> Result<Vec<String>> {
+        Ok(vec![format!("{artifact_prefix}-recovery.png")])
+    }
+
     async fn move_to_tile(
         &self,
         session: &ManagedBrowserSession,
@@ -196,6 +244,11 @@ fn launch_report(plan: &ManagedBrowserLaunchPlan) -> ManagedBrowserLaunchReport 
         timezone: plan.timezone.clone(),
         user_agent: plan.user_agent.clone(),
         zoom_percent: plan.zoom_percent,
+        actual_window_origin_x: plan.window_origin_x,
+        actual_window_origin_y: plan.window_origin_y,
+        actual_viewport_width: plan.viewport_width,
+        actual_viewport_height: plan.viewport_height,
+        display_scale_mode: plan.display_scale_mode.clone(),
     }
 }
 
@@ -209,6 +262,18 @@ fn wechat_selector_map_is_complete() {
     assert_eq!(driver.platform_id(), "wechat_web");
     assert_eq!(driver.platform_name(), "WeChat Web");
     assert!(driver.selector_map().reply_input.contains("editArea"));
+}
+
+#[test]
+fn whatsapp_selector_map_is_complete() {
+    let driver = WhatsAppWebDriver::default();
+
+    driver
+        .validate_selectors()
+        .expect("selectors should validate");
+    assert_eq!(driver.platform_id(), "whatsapp_web");
+    assert_eq!(driver.platform_name(), "WhatsApp Web");
+    assert!(driver.selector_map().reply_input.contains("footer"));
 }
 
 #[tokio::test]
@@ -241,6 +306,24 @@ async fn wechat_driver_detects_challenge_markers() {
         .expect("challenge state");
 
     assert_eq!(state, PlatformChallengeState::ChallengeRequired);
+}
+
+#[tokio::test]
+async fn whatsapp_driver_detects_chat_open_workspace_state() {
+    let runtime = MockRuntime::default();
+    let session = test_session();
+    let driver = WhatsAppWebDriver::default();
+
+    runtime.set_visible(&driver.selector_map().conversation_list, true);
+    runtime.set_visible(&driver.selector_map().message_list, true);
+    runtime.set_visible(&driver.selector_map().reply_input, true);
+
+    let state = driver
+        .detect_workspace_state(&runtime, &session)
+        .await
+        .expect("workspace state");
+
+    assert_eq!(state, PlatformWorkspaceState::ChatOpen);
 }
 
 #[tokio::test]

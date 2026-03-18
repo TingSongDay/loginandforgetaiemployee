@@ -3,12 +3,19 @@
 //! All `/api/*` routes require bearer token authentication (PairingGuard).
 
 use super::AppState;
+use crate::appliance::{
+    self,
+    browser_runtime::ManagedBrowserLaunchReport,
+    dedupe_store::{DedupeStore, DedupeStoreLoadResult},
+    session_store::{SessionStore, SessionStoreLoadResult},
+};
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Json},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use tokio::fs;
 
 const MASKED_SECRET: &str = "***MASKED***";
 
@@ -66,6 +73,55 @@ pub struct CronAddBody {
     pub command: String,
 }
 
+#[derive(Serialize)]
+struct StationStatusPayload {
+    enabled: bool,
+    station_name: String,
+    platform: String,
+    reply_mode: String,
+    operator_display_name: Option<String>,
+    left_surface: Option<StationSurfacePayload>,
+    right_panel: OperatorPanelPayload,
+}
+
+#[derive(Serialize)]
+struct StationSurfacePayload {
+    worker_id: String,
+    role: String,
+    display_name: String,
+    tile_position: String,
+    enabled: bool,
+    session_status: Option<String>,
+    paused: bool,
+    attention_reason: Option<String>,
+    last_error: Option<String>,
+    last_successful_login_at: Option<String>,
+    last_inbound_message_at: Option<String>,
+    last_reply_sent_at: Option<String>,
+    pending_reply_text: Option<String>,
+    backend: Option<String>,
+    window_origin_x: i32,
+    window_origin_y: i32,
+    viewport_width: u32,
+    viewport_height: u32,
+    actual_window_origin_x: Option<i32>,
+    actual_window_origin_y: Option<i32>,
+    actual_viewport_width: Option<u32>,
+    actual_viewport_height: Option<u32>,
+    snap_back_before_interaction: bool,
+    preflight_verification_enabled: bool,
+    display_scale_mode: String,
+}
+
+#[derive(Serialize)]
+struct OperatorPanelPayload {
+    enabled: bool,
+    runtime_mode: String,
+    local_url_or_path: String,
+    geometry_managed: bool,
+    control_actions: Vec<String>,
+}
+
 // ── Handlers ────────────────────────────────────────────────────
 
 /// GET /api/status — system status overview
@@ -86,6 +142,19 @@ pub async fn handle_api_status(
         channels.insert(channel.name().to_string(), serde_json::Value::Bool(present));
     }
 
+    let station = match build_station_status(&config).await {
+        Ok(station) => station,
+        Err(error) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": format!("Failed to build station status: {error}")
+                })),
+            )
+                .into_response();
+        }
+    };
+
     let body = serde_json::json!({
         "provider": config.default_provider,
         "model": state.model,
@@ -97,9 +166,163 @@ pub async fn handle_api_status(
         "paired": state.pairing.is_paired(),
         "channels": channels,
         "health": health,
+        "station": station,
     });
 
     Json(body).into_response()
+}
+
+/// POST /api/station/workers/:id/:action — operator panel controls
+pub async fn handle_api_station_worker_action(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((worker_id, action)): Path<(String, String)>,
+) -> impl IntoResponse {
+    if let Err(e) = require_auth(&state, &headers) {
+        return e.into_response();
+    }
+
+    let config = state.config.lock().clone();
+    let result = match action.as_str() {
+        "pause" => appliance::pause_worker(&config, &worker_id).await,
+        "resume" => appliance::resume_worker(&config, &worker_id).await,
+        "mark-login-complete" => appliance::mark_login_complete(&config, &worker_id).await,
+        "mark-challenge-complete" => appliance::mark_challenge_complete(&config, &worker_id).await,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("Unsupported station action: {action}")
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    match result {
+        Ok(()) => Json(serde_json::json!({ "status": "ok" })).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn build_station_status(config: &crate::config::Config) -> anyhow::Result<StationStatusPayload> {
+    let session_store = SessionStore::from_config(config);
+    let dedupe_store = DedupeStore::from_config(config);
+    let left_worker = config
+        .station
+        .workers
+        .iter()
+        .find(|worker| matches!(worker.tile_position, crate::config::StationTilePosition::Left));
+
+    let left_surface = if let Some(worker) = left_worker {
+        let session = session_store.load_worker_session(&worker.id).await?;
+        let dedupe = dedupe_store.load_worker_state(worker).await?;
+        let launch_report = load_launch_report(config, worker).await?;
+
+        let (session_status, paused, attention_reason, last_error, last_successful_login_at) =
+            match session {
+                SessionStoreLoadResult::Loaded(metadata) => (
+                    Some(format!("{:?}", metadata.status).to_ascii_lowercase()),
+                    metadata.paused,
+                    metadata.attention_reason.map(|reason| format!("{reason:?}").to_ascii_lowercase()),
+                    metadata.last_error,
+                    metadata.last_successful_login_at.map(|value| value.to_rfc3339()),
+                ),
+                SessionStoreLoadResult::Missing | SessionStoreLoadResult::Corrupted(_) => {
+                    (None, false, None, None, None)
+                }
+            };
+
+        let (
+            last_inbound_message_at,
+            last_reply_sent_at,
+            pending_reply_text,
+        ) = match dedupe {
+            DedupeStoreLoadResult::Loaded(state) => (
+                state.last_inbound_message_at.map(|value| value.to_rfc3339()),
+                state.last_reply_sent_at.map(|value| value.to_rfc3339()),
+                state.pending_reply.map(|pending| pending.reply_text),
+            ),
+            DedupeStoreLoadResult::Missing | DedupeStoreLoadResult::Corrupted(_) => {
+                (None, None, None)
+            }
+        };
+
+        Some(StationSurfacePayload {
+            worker_id: worker.id.clone(),
+            role: "left_automation_surface".into(),
+            display_name: worker.display_name.clone(),
+            tile_position: "left".into(),
+            enabled: worker.enabled,
+            session_status,
+            paused,
+            attention_reason,
+            last_error,
+            last_successful_login_at,
+            last_inbound_message_at,
+            last_reply_sent_at,
+            pending_reply_text,
+            backend: launch_report.as_ref().map(|report| report.backend.clone()),
+            window_origin_x: worker.managed_browser.window_origin_x,
+            window_origin_y: worker.managed_browser.window_origin_y,
+            viewport_width: worker.managed_browser.viewport_width,
+            viewport_height: worker.managed_browser.viewport_height,
+            actual_window_origin_x: launch_report.as_ref().map(|report| report.actual_window_origin_x),
+            actual_window_origin_y: launch_report.as_ref().map(|report| report.actual_window_origin_y),
+            actual_viewport_width: launch_report.as_ref().map(|report| report.actual_viewport_width),
+            actual_viewport_height: launch_report.as_ref().map(|report| report.actual_viewport_height),
+            snap_back_before_interaction: worker.managed_browser.snap_back_before_interaction,
+            preflight_verification_enabled: worker.managed_browser.preflight_verification_enabled,
+            display_scale_mode: worker.managed_browser.display_scale_mode.clone(),
+        })
+    } else {
+        None
+    };
+
+    Ok(StationStatusPayload {
+        enabled: config.station.enabled,
+        station_name: config.station.station_name.clone(),
+        platform: format!("{:?}", config.station.platform).to_ascii_lowercase(),
+        reply_mode: config.station.reply_mode.clone(),
+        operator_display_name: config.station.operator_display_name.clone(),
+        left_surface,
+        right_panel: OperatorPanelPayload {
+            enabled: config.station.right_panel.enabled,
+            runtime_mode: config.station.right_panel.runtime_mode.clone(),
+            local_url_or_path: config.station.right_panel.local_url_or_path.clone(),
+            geometry_managed: false,
+            control_actions: vec![
+                "pause".into(),
+                "resume".into(),
+                "mark-login-complete".into(),
+                "mark-challenge-complete".into(),
+            ],
+        },
+    })
+}
+
+async fn load_launch_report(
+    config: &crate::config::Config,
+    worker: &crate::config::StationWorkerConfig,
+) -> anyhow::Result<Option<ManagedBrowserLaunchReport>> {
+    let path = config
+        .workspace_dir
+        .join("station")
+        .join("profiles")
+        .join(&worker.profile_name)
+        .join("launch.json");
+
+    let contents = match fs::read_to_string(&path).await {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+
+    Ok(Some(serde_json::from_str::<ManagedBrowserLaunchReport>(&contents)?))
 }
 
 /// GET /api/config — current config (api_key masked)

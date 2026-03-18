@@ -22,6 +22,10 @@ pub struct WorkerDedupeState {
     pub metadata_version: u32,
     pub worker_id: String,
     pub bootstrapped: bool,
+    #[serde(default)]
+    pub last_inbound_message_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_reply_sent_at: Option<DateTime<Utc>>,
     pub last_seen_message_id: Option<String>,
     pub last_seen_inbound_message_id: Option<String>,
     pub last_processed_message_id: Option<String>,
@@ -135,6 +139,7 @@ impl DedupeStore {
             )
         }) {
             state.last_seen_inbound_message_id = Some(last_inbound.platform_message_id.clone());
+            state.last_inbound_message_at = Some(last_inbound.timestamp);
         }
         state.bootstrapped = true;
         state.updated_at = Utc::now();
@@ -190,6 +195,7 @@ impl DedupeStore {
         state.last_processed_message_id = Some(message.platform_message_id.clone());
         state.last_processed_message_fingerprint = Some(message.raw_fingerprint.clone());
         state.last_reply_correlation_key = Some(correlation_key.to_string());
+        state.last_reply_sent_at = Some(Utc::now());
         state.pending_reply = None;
         state.updated_at = Utc::now();
         self.save_worker_state(worker, state).await
@@ -200,6 +206,8 @@ impl DedupeStore {
             metadata_version: DEDUPE_METADATA_VERSION,
             worker_id: worker_id.to_string(),
             bootstrapped: false,
+            last_inbound_message_at: None,
+            last_reply_sent_at: None,
             last_seen_message_id: None,
             last_seen_inbound_message_id: None,
             last_processed_message_id: None,

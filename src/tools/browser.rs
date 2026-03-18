@@ -98,6 +98,14 @@ pub struct ManagedBrowserLaunchOptions {
     pub zoom_percent: u16,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ManagedBrowserWindowPlacement {
+    pub window_origin_x: i32,
+    pub window_origin_y: i32,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResolvedBackend {
     AgentBrowser,
@@ -955,6 +963,99 @@ impl BrowserTool {
         }
     }
 
+    pub async fn set_window_placement(
+        &self,
+        window_origin_x: i32,
+        window_origin_y: i32,
+        viewport_width: u32,
+        viewport_height: u32,
+        _zoom_percent: u16,
+        _locale: &str,
+    ) -> anyhow::Result<ManagedBrowserWindowPlacement> {
+        let backend = self.resolve_backend().await?;
+        match backend {
+            ResolvedBackend::RustNative => {
+                #[cfg(feature = "browser-native")]
+                {
+                    let mut state = self.native_state.lock().await;
+                    state
+                        .ensure_session(
+                            self.native_headless,
+                            &self.native_webdriver_url,
+                            self.native_chrome_path.as_deref(),
+                            self.launch_options.as_ref(),
+                        )
+                        .await?;
+                    state
+                        .set_window_placement(
+                            window_origin_x,
+                            window_origin_y,
+                            viewport_width,
+                            viewport_height,
+                            zoom_percent,
+                            locale,
+                        )
+                        .await
+                }
+                #[cfg(not(feature = "browser-native"))]
+                {
+                    anyhow::bail!(
+                        "Rust-native browser backend is not compiled. Rebuild with --features browser-native"
+                    )
+                }
+            }
+            ResolvedBackend::AgentBrowser | ResolvedBackend::ComputerUse => Ok(
+                ManagedBrowserWindowPlacement {
+                    window_origin_x,
+                    window_origin_y,
+                    viewport_width,
+                    viewport_height,
+                },
+            ),
+        }
+    }
+
+    pub async fn inspect_window_placement(
+        &self,
+        fallback_window_origin_x: i32,
+        fallback_window_origin_y: i32,
+        fallback_viewport_width: u32,
+        fallback_viewport_height: u32,
+    ) -> anyhow::Result<ManagedBrowserWindowPlacement> {
+        let backend = self.resolve_backend().await?;
+        match backend {
+            ResolvedBackend::RustNative => {
+                #[cfg(feature = "browser-native")]
+                {
+                    let mut state = self.native_state.lock().await;
+                    state
+                        .ensure_session(
+                            self.native_headless,
+                            &self.native_webdriver_url,
+                            self.native_chrome_path.as_deref(),
+                            self.launch_options.as_ref(),
+                        )
+                        .await?;
+                    state.inspect_window_placement().await
+                }
+                #[cfg(not(feature = "browser-native"))]
+                {
+                    anyhow::bail!(
+                        "Rust-native browser backend is not compiled. Rebuild with --features browser-native"
+                    )
+                }
+            }
+            ResolvedBackend::AgentBrowser | ResolvedBackend::ComputerUse => Ok(
+                ManagedBrowserWindowPlacement {
+                    window_origin_x: fallback_window_origin_x,
+                    window_origin_y: fallback_window_origin_y,
+                    viewport_width: fallback_viewport_width,
+                    viewport_height: fallback_viewport_height,
+                },
+            ),
+        }
+    }
+
     #[allow(clippy::unnecessary_wraps, clippy::unused_self)]
     fn to_result(&self, resp: AgentBrowserResponse) -> anyhow::Result<ToolResult> {
         if resp.success {
@@ -1178,7 +1279,7 @@ impl Tool for BrowserTool {
 
 #[cfg(feature = "browser-native")]
 mod native_backend {
-    use super::{BrowserAction, ManagedBrowserLaunchOptions};
+    use super::{BrowserAction, ManagedBrowserLaunchOptions, ManagedBrowserWindowPlacement};
     use anyhow::{Context, Result};
     use base64::Engine;
     use fantoccini::actions::{InputSource, MouseActions, PointerAction};
@@ -1681,6 +1782,95 @@ mod native_backend {
                 )
                 .await;
             Ok(())
+        }
+
+        pub async fn set_window_placement(
+            &mut self,
+            window_origin_x: i32,
+            window_origin_y: i32,
+            viewport_width: u32,
+            viewport_height: u32,
+            zoom_percent: u16,
+            locale: &str,
+        ) -> Result<ManagedBrowserWindowPlacement> {
+            let client = self.active_client()?;
+            client
+                .execute(
+                    r#"
+(() => {
+  try {
+    if (typeof window.moveTo === "function") {
+      window.moveTo(arguments[0], arguments[1]);
+    }
+    if (typeof window.resizeTo === "function") {
+      window.resizeTo(arguments[2], arguments[3]);
+    }
+    if (document && document.documentElement) {
+      document.documentElement.lang = arguments[4];
+    }
+    if (document && document.body) {
+      document.body.style.zoom = arguments[5];
+    }
+  } catch (_error) {}
+  return {
+    x: window.screenX || window.screenLeft || arguments[0],
+    y: window.screenY || window.screenTop || arguments[1],
+    width: window.outerWidth || arguments[2],
+    height: window.outerHeight || arguments[3]
+  };
+})()
+"#,
+                    vec![
+                        json!(window_origin_x),
+                        json!(window_origin_y),
+                        json!(viewport_width),
+                        json!(viewport_height),
+                        json!(locale),
+                        json!(format!("{}%", zoom_percent)),
+                    ],
+                )
+                .await
+                .context("Failed to set native browser window placement")?;
+
+            self.inspect_window_placement().await.or_else(|_| {
+                Ok(ManagedBrowserWindowPlacement {
+                    window_origin_x,
+                    window_origin_y,
+                    viewport_width,
+                    viewport_height,
+                })
+            })
+        }
+
+        pub async fn inspect_window_placement(&mut self) -> Result<ManagedBrowserWindowPlacement> {
+            let client = self.active_client()?;
+            let value = client
+                .execute(
+                    r#"
+(() => ({
+  x: window.screenX || window.screenLeft || 0,
+  y: window.screenY || window.screenTop || 0,
+  width: window.outerWidth || window.innerWidth || 0,
+  height: window.outerHeight || window.innerHeight || 0
+}))()
+"#,
+                    vec![],
+                )
+                .await
+                .context("Failed to inspect native browser window placement")?;
+
+            Ok(ManagedBrowserWindowPlacement {
+                window_origin_x: value.get("x").and_then(Value::as_i64).unwrap_or_default() as i32,
+                window_origin_y: value.get("y").and_then(Value::as_i64).unwrap_or_default() as i32,
+                viewport_width: value
+                    .get("width")
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default() as u32,
+                viewport_height: value
+                    .get("height")
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default() as u32,
+            })
         }
 
         fn active_client(&self) -> Result<&Client> {

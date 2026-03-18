@@ -9,6 +9,53 @@ export interface StatusResponse {
   paired: boolean;
   channels: Record<string, boolean>;
   health: HealthSnapshot;
+  station: StationStatus;
+}
+
+export interface StationStatus {
+  enabled: boolean;
+  station_name: string;
+  platform: string;
+  reply_mode: string;
+  operator_display_name: string | null;
+  left_surface: StationSurfaceStatus | null;
+  right_panel: OperatorPanelStatus;
+}
+
+export interface StationSurfaceStatus {
+  worker_id: string;
+  role: string;
+  display_name: string;
+  tile_position: string;
+  enabled: boolean;
+  session_status: string | null;
+  paused: boolean;
+  attention_reason: string | null;
+  last_error: string | null;
+  last_successful_login_at: string | null;
+  last_inbound_message_at: string | null;
+  last_reply_sent_at: string | null;
+  pending_reply_text: string | null;
+  backend: string | null;
+  window_origin_x: number;
+  window_origin_y: number;
+  viewport_width: number;
+  viewport_height: number;
+  actual_window_origin_x: number | null;
+  actual_window_origin_y: number | null;
+  actual_viewport_width: number | null;
+  actual_viewport_height: number | null;
+  snap_back_before_interaction: boolean;
+  preflight_verification_enabled: boolean;
+  display_scale_mode: string;
+}
+
+export interface OperatorPanelStatus {
+  enabled: boolean;
+  runtime_mode: string;
+  local_url_or_path: string;
+  geometry_managed: boolean;
+  control_actions: string[];
 }
 
 export interface HealthSnapshot {

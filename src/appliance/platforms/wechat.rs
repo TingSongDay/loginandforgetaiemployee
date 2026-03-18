@@ -1,11 +1,10 @@
 use crate::appliance::{
     browser_runtime::{ManagedBrowserRuntime, ManagedBrowserSession},
     platforms::{
-        MessageDirection, MessagingPlatformDriver, PlatformChallengeState, PlatformLoginState,
-        PlatformMessageNode, PlatformSelectorMap,
+        selector_is_visible, MessageDirection, MessagingPlatformDriver, PlatformChallengeState,
+        PlatformLoginState, PlatformMessageNode, PlatformSelectorMap,
     },
 };
-use crate::tools::ToolResult;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 
@@ -22,6 +21,8 @@ impl Default for WeChatWebDriver {
             selectors: PlatformSelectorMap {
                 conversation_list: ".chat_list, .ng-chat-list, [class*='chat_list']".into(),
                 conversation_item: ".chat_item, .ng-chat-item".into(),
+                search_input: ".frm_search input, .search_bar input, input[type='search']".into(),
+                active_chat_header: ".box_hd, .chat-header, .title_wrap".into(),
                 message_list: ".box_chat, .message-container, [class*='message']".into(),
                 incoming_message:
                     ".message:not(.me):not(.self), .msg:not(.me):not(.self), .bubble:not(.me):not(.self)".into(),
@@ -41,6 +42,8 @@ impl Default for WeChatWebDriver {
                     ".login__desc".into(),
                     ".dialog_ft".into(),
                 ],
+                modal_markers: vec![".dialog_bd".into(), ".dialog_ft".into()],
+                overlay_markers: vec![".mask".into(), ".association".into()],
             },
         }
     }
@@ -164,7 +167,7 @@ fn parse_text_block(text: &str, direction: MessageDirection) -> Vec<PlatformMess
         .collect()
 }
 
-fn ensure_tool_success(action: &str, result: ToolResult) -> Result<()> {
+fn ensure_tool_success(action: &str, result: crate::tools::ToolResult) -> Result<()> {
     if result.success {
         return Ok(());
     }
@@ -175,41 +178,4 @@ fn ensure_tool_success(action: &str, result: ToolResult) -> Result<()> {
             .error
             .unwrap_or_else(|| "browser runtime returned an unsuccessful result".into())
     )
-}
-
-async fn selector_is_visible(
-    runtime: &dyn ManagedBrowserRuntime,
-    session: &ManagedBrowserSession,
-    selector: &str,
-) -> Result<bool> {
-    let result = runtime.is_visible(session, selector).await?;
-    parse_visibility_result(result)
-}
-
-fn parse_visibility_result(result: ToolResult) -> Result<bool> {
-    if !result.success {
-        return Ok(false);
-    }
-
-    let output = result.output.trim();
-    if output.eq_ignore_ascii_case("true") {
-        return Ok(true);
-    }
-    if output.eq_ignore_ascii_case("false") || output.is_empty() {
-        return Ok(false);
-    }
-
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(output) {
-        if let Some(value) = parsed.as_bool() {
-            return Ok(value);
-        }
-        if let Some(value) = parsed.get("visible").and_then(serde_json::Value::as_bool) {
-            return Ok(value);
-        }
-        if let Some(value) = parsed.get("data").and_then(serde_json::Value::as_bool) {
-            return Ok(value);
-        }
-    }
-
-    Ok(false)
 }
