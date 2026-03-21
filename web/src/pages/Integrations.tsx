@@ -59,8 +59,8 @@ export default function Integrations() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300">
+      <div className="nh-page-shell">
+        <div className="nh-page-note nh-page-note-danger text-rose-200">
           Failed to load integrations: {error}
         </div>
       </div>
@@ -69,23 +69,29 @@ export default function Integrations() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="nh-page-shell flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-2">
-        <Puzzle className="h-5 w-5 text-blue-400" />
-        <h2 className="text-base font-semibold text-white">
-          Integrations ({integrations.length})
-        </h2>
-      </div>
+    <div className="nh-page-shell">
+      <section className="nh-page-hero">
+        <div>
+          <p className="nh-page-kicker">Live channels</p>
+          <h2 className="nh-page-title">Integrations</h2>
+          <p className="nh-page-subtitle">
+            See which external surfaces are active, available, or staged next in the NeoHuman
+            channel stack.
+          </p>
+        </div>
+        <div className="nh-state-pill nh-state-pill-live">
+          <span className="nh-state-dot" />
+          {integrations.length} integrations tracked
+        </div>
+      </section>
 
-      {/* Category Filter Tabs */}
       <div className="flex flex-wrap gap-2">
         {categories.map((cat) => (
           <button
@@ -93,8 +99,8 @@ export default function Integrations() {
             onClick={() => setActiveCategory(cat)}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
               activeCategory === cat
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-900 text-gray-400 border border-gray-700 hover:bg-gray-800 hover:text-white'
+                ? 'nh-button-primary'
+                : 'nh-button-ghost'
             }`}
           >
             {cat}
@@ -104,9 +110,11 @@ export default function Integrations() {
 
       {/* Grouped Integration Cards */}
       {Object.keys(grouped).length === 0 ? (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 text-center">
-          <Puzzle className="h-10 w-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-400">No integrations found.</p>
+        <div className="nh-panel nh-empty-state">
+          <span className="nh-icon-well">
+            <Puzzle className="h-5 w-5" />
+          </span>
+          <p>No integrations found.</p>
         </div>
       ) : (
         Object.entries(grouped)
@@ -123,7 +131,7 @@ export default function Integrations() {
                   return (
                     <div
                       key={integration.name}
-                      className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors"
+                      className="nh-panel p-5 hover:border-white/16 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

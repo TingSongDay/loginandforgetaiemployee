@@ -47,11 +47,12 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="bg-gray-900 rounded-xl p-8 w-full max-w-md border border-gray-800">
+    <div className="nh-app-shell flex items-center justify-center p-4">
+      <div className="nh-modal-card w-full max-w-md">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-white mb-2">ZeroClaw</h1>
-          <p className="text-gray-400">Enter the pairing code from your terminal</p>
+          <p className="nh-page-kicker">NeoHuman pairing</p>
+          <h1 className="text-3xl font-bold text-white mt-3 mb-2 tracking-[-0.04em]">NeoHuman</h1>
+          <p className="text-white/60">Enter the pairing code from your terminal</p>
         </div>
         <form onSubmit={handleSubmit}>
           <input
@@ -59,17 +60,17 @@ function PairingDialog({ onPair }: { onPair: (code: string) => Promise<void> }) 
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="6-digit code"
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-center text-2xl tracking-widest focus:outline-none focus:border-blue-500 mb-4"
+            className="nh-input mb-4 px-4 py-3 text-center text-2xl tracking-widest"
             maxLength={6}
             autoFocus
           />
           {error && (
-            <p className="text-red-400 text-sm mb-4 text-center">{error}</p>
+            <p className="text-rose-300 text-sm mb-4 text-center">{error}</p>
           )}
           <button
             type="submit"
             disabled={loading || code.length < 6}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors"
+            className="nh-button-primary w-full py-3"
           >
             {loading ? 'Pairing...' : 'Pair'}
           </button>
@@ -99,8 +100,8 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <p className="text-gray-400">Connecting...</p>
+      <div className="nh-app-shell flex items-center justify-center">
+        <p className="text-white/60">Connecting...</p>
       </div>
     );
   }

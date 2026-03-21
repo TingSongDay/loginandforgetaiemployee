@@ -96,8 +96,8 @@ export default function Memory() {
 
   if (error && entries.length === 0) {
     return (
-      <div className="p-6">
-        <div className="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300">
+      <div className="nh-page-shell">
+        <div className="nh-page-note nh-page-note-danger text-rose-200">
           Failed to load memory: {error}
         </div>
       </div>
@@ -105,43 +105,43 @@ export default function Memory() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Brain className="h-5 w-5 text-blue-400" />
-          <h2 className="text-base font-semibold text-white">
-            Memory ({entries.length})
-          </h2>
+    <div className="nh-page-shell">
+      <section className="nh-page-hero">
+        <div>
+          <p className="nh-page-kicker">Continuity layer</p>
+          <h2 className="nh-page-title">Memory</h2>
+          <p className="nh-page-subtitle">
+            Store durable facts, preferences, and operator context so NeoHuman stays aligned across
+            sessions.
+          </p>
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="nh-button-primary"
         >
           <Plus className="h-4 w-4" />
           Add Memory
         </button>
-      </div>
+      </section>
 
-      {/* Search and Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/35" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search memory entries..."
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="nh-input pl-10 pr-4 py-2.5 text-sm"
           />
         </div>
         <div className="relative">
-          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+          <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/35" />
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-8 py-2.5 text-sm text-white appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            className="nh-select pl-10 pr-8 py-2.5 text-sm appearance-none cursor-pointer"
           >
             <option value="">All Categories</option>
             {categories.map((cat) => (
@@ -153,7 +153,7 @@ export default function Memory() {
         </div>
         <button
           onClick={handleSearch}
-          className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="nh-button-primary"
         >
           Search
         </button>
@@ -161,15 +161,14 @@ export default function Memory() {
 
       {/* Error banner (non-fatal) */}
       {error && (
-        <div className="rounded-lg bg-red-900/30 border border-red-700 p-3 text-sm text-red-300">
+        <div className="nh-page-note nh-page-note-danger text-sm text-red-300">
           {error}
         </div>
       )}
 
-      {/* Add Memory Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md mx-4">
+        <div className="nh-modal-backdrop">
+          <div className="nh-modal-card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-white">Add Memory</h3>
               <button
@@ -199,7 +198,7 @@ export default function Memory() {
                   value={formKey}
                   onChange={(e) => setFormKey(e.target.value)}
                   placeholder="e.g. user_preferences"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="nh-input px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -211,7 +210,7 @@ export default function Memory() {
                   onChange={(e) => setFormContent(e.target.value)}
                   placeholder="Memory content..."
                   rows={4}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="nh-textarea px-3 py-2 text-sm resize-none"
                 />
               </div>
               <div>
@@ -223,7 +222,7 @@ export default function Memory() {
                   value={formCategory}
                   onChange={(e) => setFormCategory(e.target.value)}
                   placeholder="e.g. preferences, context, facts"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="nh-input px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -234,14 +233,14 @@ export default function Memory() {
                   setShowForm(false);
                   setFormError(null);
                 }}
-                className="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                className="nh-button-ghost"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAdd}
                 disabled={submitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                className="nh-button-primary"
               >
                 {submitting ? 'Saving...' : 'Save'}
               </button>
@@ -256,12 +255,14 @@ export default function Memory() {
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
         </div>
       ) : entries.length === 0 ? (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 text-center">
-          <Brain className="h-10 w-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-400">No memory entries found.</p>
+        <div className="nh-panel nh-empty-state">
+          <span className="nh-icon-well">
+            <Brain className="h-5 w-5" />
+          </span>
+          <p>No memory entries found.</p>
         </div>
       ) : (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-x-auto">
+        <div className="nh-panel nh-table-shell overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
@@ -297,7 +298,7 @@ export default function Memory() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-800 text-gray-300 capitalize">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border border-white/8 bg-white/5 text-gray-300 capitalize">
                       {entry.category}
                     </span>
                   </td>

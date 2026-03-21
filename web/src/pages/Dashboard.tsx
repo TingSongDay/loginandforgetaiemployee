@@ -1,14 +1,23 @@
 import { useState, useEffect } from 'react';
 import {
-  Cpu,
-  Clock,
-  Globe,
-  Database,
   Activity,
+  Bot,
+  BrainCircuit,
+  CheckCircle2,
+  Clock3,
+  Cpu,
+  Database,
   DollarSign,
-  Radio,
-  MonitorSmartphone,
+  Globe,
+  HeartPulse,
   MessageSquareWarning,
+  MonitorSmartphone,
+  Orbit,
+  Radio,
+  ShieldCheck,
+  Sparkles,
+  TriangleAlert,
+  Waves,
 } from 'lucide-react';
 import type { StatusResponse, CostSummary } from '@/types/api';
 import { getStatus, getCost, postStationWorkerAction } from '@/lib/api';
@@ -37,13 +46,13 @@ function healthColor(status: string): string {
   switch (status.toLowerCase()) {
     case 'ok':
     case 'healthy':
-      return 'bg-green-500';
+      return 'bg-lime-400';
     case 'warn':
     case 'warning':
     case 'degraded':
-      return 'bg-yellow-500';
+      return 'bg-amber-400';
     default:
-      return 'bg-red-500';
+      return 'bg-rose-400';
   }
 }
 
@@ -51,14 +60,70 @@ function healthBorder(status: string): string {
   switch (status.toLowerCase()) {
     case 'ok':
     case 'healthy':
-      return 'border-green-500/30';
+      return 'border-lime-300/25';
     case 'warn':
     case 'warning':
     case 'degraded':
-      return 'border-yellow-500/30';
+      return 'border-amber-300/25';
     default:
-      return 'border-red-500/30';
+      return 'border-rose-300/25';
   }
+}
+
+function sentenceCase(value: string | null | undefined, fallback = 'Unavailable'): string {
+  if (!value) return fallback;
+  return value
+    .split(/[_-]/g)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function stationStateLabel(
+  station: StatusResponse['station'],
+  leftSurface: StatusResponse['station']['left_surface'],
+): string {
+  if (!station.enabled) return 'Offline';
+  if (leftSurface?.attention_reason || leftSurface?.last_error) return 'Needs Human Attention';
+  if (leftSurface?.paused) return 'Paused';
+  if (leftSurface?.session_status) return sentenceCase(leftSurface.session_status);
+  return 'Live';
+}
+
+function stationStateTone(
+  station: StatusResponse['station'],
+  leftSurface: StatusResponse['station']['left_surface'],
+): 'live' | 'warn' | 'muted' | 'danger' {
+  if (!station.enabled) return 'danger';
+  if (leftSurface?.attention_reason || leftSurface?.last_error) return 'warn';
+  if (leftSurface?.paused) return 'muted';
+  return 'live';
+}
+
+function primaryHealthSignal(status: StatusResponse): { title: string; detail: string } {
+  const attention = status.station.left_surface?.attention_reason || status.station.left_surface?.last_error;
+  if (attention) {
+    return {
+      title: 'Human handoff requested',
+      detail: attention,
+    };
+  }
+
+  const unhealthy = Object.entries(status.health.components).find(([, component]) => {
+    const current = component.status.toLowerCase();
+    return !['ok', 'healthy'].includes(current);
+  });
+
+  if (unhealthy) {
+    return {
+      title: `Vitality drift in ${unhealthy[0]}`,
+      detail: sentenceCase(unhealthy[1].status),
+    };
+  }
+
+  return {
+    title: 'System vitality stable',
+    detail: 'Worker duet is responsive and synchronized.',
+  };
 }
 
 export default function Dashboard() {
@@ -98,9 +163,13 @@ export default function Dashboard() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300">
-          Failed to load dashboard: {error}
+      <div className="nh-dashboard-shell">
+        <div className="nh-dashboard-error">
+          <TriangleAlert className="h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold text-white">Dashboard unavailable</p>
+            <p className="mt-1 text-sm text-rose-100/80">Failed to load dashboard: {error}</p>
+          </div>
         </div>
       </div>
     );
@@ -108,181 +177,404 @@ export default function Dashboard() {
 
   if (!status || !cost) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
+      <div className="nh-dashboard-shell">
+        <div className="nh-dashboard-loading">
+          <div className="nh-dashboard-spinner" />
+          <div>
+            <p className="text-sm uppercase tracking-[0.3em] text-cyan-200/70">NeoHuman</p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              Connecting the digital human cockpit...
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
 
-  const maxCost = Math.max(cost.session_cost_usd, cost.daily_cost_usd, cost.monthly_cost_usd, 0.001);
   const leftSurface = status.station.left_surface;
+  const maxCost = Math.max(
+    cost.session_cost_usd,
+    cost.daily_cost_usd,
+    cost.monthly_cost_usd,
+    0.001,
+  );
+  const stateLabel = stationStateLabel(status.station, leftSurface);
+  const stateTone = stationStateTone(status.station, leftSurface);
+  const healthSignal = primaryHealthSignal(status);
+  const metrics = [
+    {
+      label: 'Provider / Model',
+      value: status.provider ?? 'Unknown',
+      detail: status.model,
+      icon: Cpu,
+      tone: 'cyan',
+    },
+    {
+      label: 'Uptime',
+      value: formatUptime(status.uptime_seconds),
+      detail: 'Since last restart',
+      icon: Clock3,
+      tone: 'amber',
+    },
+    {
+      label: 'Gateway / Locale',
+      value: `:${status.gateway_port}`,
+      detail: `Locale ${status.locale}`,
+      icon: Globe,
+      tone: 'violet',
+    },
+    {
+      label: 'Memory / Pairing',
+      value: sentenceCase(status.memory_backend),
+      detail: status.paired ? 'Paired and trusted' : 'Not paired yet',
+      icon: Database,
+      tone: 'lime',
+    },
+  ];
+  const resourceBurn = [
+    { label: 'Session', value: cost.session_cost_usd, tone: 'cyan' },
+    { label: 'Daily', value: cost.daily_cost_usd, tone: 'coral' },
+    { label: 'Monthly', value: cost.monthly_cost_usd, tone: 'violet' },
+  ];
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center justify-between gap-4 mb-4">
-            <div className="flex items-center gap-2">
-              <MonitorSmartphone className="h-5 w-5 text-blue-400" />
-              <h2 className="text-base font-semibold text-white">NeoHUman Station</h2>
-            </div>
-            <span className="text-xs uppercase tracking-wide text-gray-400">
-              {status.station.enabled ? 'Enabled' : 'Disabled'}
-            </span>
+    <div className="nh-dashboard-shell">
+      <section className="nh-hero-card">
+        <div className="nh-hero-copy">
+          <div className="nh-hero-badge">
+            <Sparkles className="h-4 w-4" />
+            NeoHuman worker_b dashboard
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm text-gray-400">Left Automation Surface</p>
-                  <p className="text-lg font-semibold text-white">
-                    {leftSurface?.display_name ?? 'Not configured'}
-                  </p>
-                </div>
-                <span className="text-xs uppercase tracking-wide text-gray-400">
-                  {leftSurface?.session_status ?? 'idle'}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-gray-500">Browser</p>
-                  <p className="text-white">{leftSurface?.backend ?? 'Not launched'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Geometry</p>
-                  <p className="text-white">
-                    {leftSurface
-                      ? `${leftSurface.window_origin_x},${leftSurface.window_origin_y} • ${leftSurface.viewport_width}x${leftSurface.viewport_height}`
-                      : 'N/A'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Last Inbound</p>
-                  <p className="text-white">{formatTimestamp(leftSurface?.last_inbound_message_at ?? null)}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Last Reply</p>
-                  <p className="text-white">{formatTimestamp(leftSurface?.last_reply_sent_at ?? null)}</p>
-                </div>
-              </div>
-              <div className="rounded-lg bg-gray-900/80 border border-gray-800 p-3 text-sm">
-                <p className="text-gray-400">Recovery / Attention</p>
-                <p className="text-white mt-1">
-                  {leftSurface?.attention_reason ??
-                    leftSurface?.last_error ??
-                    'No intervention requested'}
-                </p>
-                {leftSurface?.pending_reply_text && (
-                  <p className="text-blue-300 mt-2">
-                    Pending reply: {leftSurface.pending_reply_text}
-                  </p>
-                )}
-              </div>
-              {leftSurface && (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => runStationAction(leftSurface.worker_id, 'pause')}
-                    disabled={stationAction !== null}
-                    className="px-3 py-2 rounded-lg bg-amber-600/20 border border-amber-500/30 text-amber-200 text-sm disabled:opacity-50"
-                  >
-                    Pause
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => runStationAction(leftSurface.worker_id, 'resume')}
-                    disabled={stationAction !== null}
-                    className="px-3 py-2 rounded-lg bg-green-600/20 border border-green-500/30 text-green-200 text-sm disabled:opacity-50"
-                  >
-                    Resume
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => runStationAction(leftSurface.worker_id, 'mark-login-complete')}
-                    disabled={stationAction !== null}
-                    className="px-3 py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-200 text-sm disabled:opacity-50"
-                  >
-                    Mark Login Complete
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => runStationAction(leftSurface.worker_id, 'mark-challenge-complete')}
-                    disabled={stationAction !== null}
-                    className="px-3 py-2 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-200 text-sm disabled:opacity-50"
-                  >
-                    Mark Challenge Complete
-                  </button>
-                </div>
-              )}
+          <div className="space-y-4">
+            <p className="text-sm uppercase tracking-[0.35em] text-cyan-100/60">
+              Digital human cockpit
+            </p>
+            <h1 className="nh-hero-title">NeoHuman</h1>
+            <p className="nh-hero-subtitle">
+              A vivid operator presence for work that should have evolved already. Worker B should
+              feel like a living digital collaborator, not a back-office terminal.
+            </p>
+          </div>
+          <div className="nh-hero-status-row">
+            <div className={`nh-state-pill nh-state-pill-${stateTone}`}>
+              <span className="nh-state-dot" />
+              {stateLabel}
             </div>
-
-            <div className="rounded-xl border border-gray-800 bg-gray-800/40 p-4 space-y-3">
-              <div>
-                <p className="text-sm text-gray-400">Right Operator Panel</p>
-                <p className="text-lg font-semibold text-white">
-                  {status.station.right_panel.runtime_mode}
-                </p>
-              </div>
-              <div className="grid grid-cols-1 gap-3 text-sm">
-                <div>
-                  <p className="text-gray-500">Path</p>
-                  <p className="text-white">{status.station.right_panel.local_url_or_path}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Geometry</p>
-                  <p className="text-white">
-                    {status.station.right_panel.geometry_managed ? 'Managed' : 'Free-positioned'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Operator</p>
-                  <p className="text-white">
-                    {status.station.operator_display_name ?? 'Unspecified'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Reply Mode</p>
-                  <p className="text-white">{status.station.reply_mode}</p>
-                </div>
-              </div>
-              <div className="rounded-lg bg-gray-900/80 border border-gray-800 p-3 text-sm">
-                <div className="flex items-center gap-2 text-gray-400">
-                  <MessageSquareWarning className="h-4 w-4 text-blue-400" />
-                  Control surface actions
-                </div>
-                <p className="text-white mt-2">
-                  {status.station.right_panel.control_actions.join(', ')}
-                </p>
-              </div>
+            <div className="nh-state-context">
+              <p className="text-xs uppercase tracking-[0.22em] text-white/45">Reply mode</p>
+              <p className="text-sm font-medium text-white">
+                {sentenceCase(status.station.reply_mode)}
+              </p>
+            </div>
+            <div className="nh-state-context">
+              <p className="text-xs uppercase tracking-[0.22em] text-white/45">Operator</p>
+              <p className="text-sm font-medium text-white">
+                {status.station.operator_display_name ?? 'Unspecified'}
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="h-5 w-5 text-blue-400" />
-            <h2 className="text-base font-semibold text-white">Kiosk Contract</h2>
+        <div className="nh-hero-orbital-panel">
+          <div className="nh-hero-orbital-ring" />
+          <div className="nh-hero-orbital-core">
+            <Bot className="h-9 w-9 text-cyan-100" />
           </div>
-          <div className="space-y-3 text-sm">
-            <div className="rounded-lg bg-gray-800/50 p-3">
-              <p className="text-gray-400">Snap-back before interaction</p>
-              <p className="text-white mt-1">
+          <div className="nh-hero-signal-card">
+            <div className="flex items-center gap-2 text-cyan-100">
+              <HeartPulse className="h-4 w-4" />
+              <span className="text-sm font-medium">{healthSignal.title}</span>
+            </div>
+            <p className="mt-2 text-sm text-white/70">{healthSignal.detail}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="nh-metric-ribbon">
+        {metrics.map(({ label, value, detail, icon: Icon, tone }) => (
+          <article key={label} className={`nh-metric-pill nh-metric-pill-${tone}`}>
+            <div className="nh-metric-icon">
+              <Icon className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">{label}</p>
+              <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+              <p className="text-sm text-white/55">{detail}</p>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="nh-worker-grid">
+        <article className="nh-surface-card nh-surface-card-a">
+          <div className="nh-surface-head">
+            <div>
+              <div className="nh-surface-label">
+                <MonitorSmartphone className="h-4 w-4" />
+                Worker A
+              </div>
+              <h2 className="nh-surface-title">
+                {leftSurface?.display_name ?? 'Automation surface unavailable'}
+              </h2>
+              <p className="nh-surface-copy">
+                The active execution surface for conversations, snap-back control, and human
+                recovery.
+              </p>
+            </div>
+            <div className={`nh-state-pill nh-state-pill-${leftSurface?.paused ? 'muted' : stateTone}`}>
+              <span className="nh-state-dot" />
+              {leftSurface?.session_status ?? 'Idle'}
+            </div>
+          </div>
+
+          <div className="nh-surface-stats">
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Backend</p>
+              <p className="nh-detail-value">{leftSurface?.backend ?? 'Not launched'}</p>
+            </div>
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Geometry</p>
+              <p className="nh-detail-value">
+                {leftSurface
+                  ? `${leftSurface.window_origin_x},${leftSurface.window_origin_y} • ${leftSurface.viewport_width}x${leftSurface.viewport_height}`
+                  : 'N/A'}
+              </p>
+            </div>
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Last inbound</p>
+              <p className="nh-detail-value">
+                {formatTimestamp(leftSurface?.last_inbound_message_at ?? null)}
+              </p>
+            </div>
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Last reply</p>
+              <p className="nh-detail-value">
+                {formatTimestamp(leftSurface?.last_reply_sent_at ?? null)}
+              </p>
+            </div>
+          </div>
+
+          <div className="nh-attention-panel">
+            <div className="flex items-center gap-2 text-white">
+              <TriangleAlert className="h-4 w-4 text-amber-300" />
+              <span className="text-sm font-medium">Intervention signal</span>
+            </div>
+            <p className="mt-3 text-sm text-white/78">
+              {leftSurface?.attention_reason ?? leftSurface?.last_error ?? 'No intervention requested'}
+            </p>
+            {leftSurface?.pending_reply_text && (
+              <p className="mt-3 rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm text-cyan-50">
+                Pending reply: {leftSurface.pending_reply_text}
+              </p>
+            )}
+          </div>
+
+          {leftSurface && (
+            <div className="nh-action-cluster">
+              <button
+                type="button"
+                onClick={() => runStationAction(leftSurface.worker_id, 'resume')}
+                disabled={stationAction !== null}
+                className="nh-action-button nh-action-button-primary"
+              >
+                Resume
+              </button>
+              <button
+                type="button"
+                onClick={() => runStationAction(leftSurface.worker_id, 'pause')}
+                disabled={stationAction !== null}
+                className="nh-action-button nh-action-button-warn"
+              >
+                Pause
+              </button>
+              <button
+                type="button"
+                onClick={() => runStationAction(leftSurface.worker_id, 'mark-login-complete')}
+                disabled={stationAction !== null}
+                className="nh-action-button nh-action-button-secondary"
+              >
+                Mark Login Complete
+              </button>
+              <button
+                type="button"
+                onClick={() => runStationAction(leftSurface.worker_id, 'mark-challenge-complete')}
+                disabled={stationAction !== null}
+                className="nh-action-button nh-action-button-secondary"
+              >
+                Mark Challenge Complete
+              </button>
+            </div>
+          )}
+        </article>
+
+        <article className="nh-surface-card nh-surface-card-b">
+          <div className="nh-surface-head">
+            <div>
+              <div className="nh-surface-label">
+                <BrainCircuit className="h-4 w-4" />
+                Worker B
+              </div>
+              <h2 className="nh-surface-title">
+                {sentenceCase(status.station.right_panel.runtime_mode)}
+              </h2>
+              <p className="nh-surface-copy">
+                The supervising digital human interface that interprets intent and orchestrates
+                Worker A.
+              </p>
+            </div>
+            <div className="nh-presence-chip">
+              <Orbit className="h-4 w-4" />
+              Operator presence live
+            </div>
+          </div>
+
+          <div className="nh-surface-stats">
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Path</p>
+              <p className="nh-detail-value">{status.station.right_panel.local_url_or_path}</p>
+            </div>
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Geometry</p>
+              <p className="nh-detail-value">
+                {status.station.right_panel.geometry_managed ? 'Managed' : 'Free-positioned'}
+              </p>
+            </div>
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Operator</p>
+              <p className="nh-detail-value">
+                {status.station.operator_display_name ?? 'Unspecified'}
+              </p>
+            </div>
+            <div className="nh-detail-block">
+              <p className="nh-detail-label">Reply mode</p>
+              <p className="nh-detail-value">{sentenceCase(status.station.reply_mode)}</p>
+            </div>
+          </div>
+
+          <div className="nh-presence-panel">
+            <div className="flex items-center gap-2 text-white">
+              <MessageSquareWarning className="h-4 w-4 text-rose-200" />
+              <span className="text-sm font-medium">Control actions</span>
+            </div>
+            <p className="mt-3 text-sm text-white/78">
+              {status.station.right_panel.control_actions.join(', ')}
+            </p>
+          </div>
+
+          <div className="nh-worker-b-callout">
+            <Waves className="h-5 w-5 text-orange-200" />
+            <div>
+              <p className="text-sm font-medium text-white">Human-centric orchestration</p>
+              <p className="mt-1 text-sm text-white/68">
+                Worker B exists to feel intentional, warm, and decisive while replacing routine
+                operator work.
+              </p>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section className="nh-intelligence-grid">
+        <article className="nh-intel-card nh-intel-card-burn">
+          <div className="nh-intel-head">
+            <div className="nh-intel-icon">
+              <DollarSign className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="nh-intel-kicker">Operational intelligence</p>
+              <h3 className="nh-intel-title">Resource Burn</h3>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {resourceBurn.map(({ label, value, tone }) => (
+              <div key={label}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span className="text-white/60">{label}</span>
+                  <span className="font-medium text-white">{formatUSD(value)}</span>
+                </div>
+                <div className="nh-burn-track">
+                  <div
+                    className={`nh-burn-fill nh-burn-fill-${tone}`}
+                    style={{ width: `${Math.max((value / maxCost) * 100, 2)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="nh-mini-stat">
+              <p className="nh-detail-label">Total tokens</p>
+              <p className="nh-detail-value">{cost.total_tokens.toLocaleString()}</p>
+            </div>
+            <div className="nh-mini-stat">
+              <p className="nh-detail-label">Requests</p>
+              <p className="nh-detail-value">{cost.request_count.toLocaleString()}</p>
+            </div>
+          </div>
+        </article>
+
+        <article className="nh-intel-card nh-intel-card-health">
+          <div className="nh-intel-head">
+            <div className="nh-intel-icon">
+              <HeartPulse className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="nh-intel-kicker">Operational intelligence</p>
+              <h3 className="nh-intel-title">System Vitality</h3>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {Object.entries(status.health.components).length === 0 ? (
+              <p className="text-sm text-white/45">No components reporting</p>
+            ) : (
+              Object.entries(status.health.components).map(([name, comp]) => (
+                <div key={name} className={`nh-vitality-chip ${healthBorder(comp.status)}`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${healthColor(comp.status)}`} />
+                    <span className="truncate text-sm font-medium text-white">{name}</span>
+                  </div>
+                  <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/40">
+                    {comp.status}
+                  </p>
+                  {comp.restart_count > 0 && (
+                    <p className="mt-2 text-xs text-amber-200">Restarts: {comp.restart_count}</p>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </article>
+
+        <article className="nh-intel-card nh-intel-card-contract">
+          <div className="nh-intel-head">
+            <div className="nh-intel-icon">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="nh-intel-kicker">Operational intelligence</p>
+              <h3 className="nh-intel-title">Trust Envelope</h3>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="nh-mini-stat">
+              <p className="nh-detail-label">Snap-back before interaction</p>
+              <p className="nh-detail-value">
                 {leftSurface?.snap_back_before_interaction ? 'Enabled' : 'Disabled'}
               </p>
             </div>
-            <div className="rounded-lg bg-gray-800/50 p-3">
-              <p className="text-gray-400">Preflight verification</p>
-              <p className="text-white mt-1">
+            <div className="nh-mini-stat">
+              <p className="nh-detail-label">Preflight verification</p>
+              <p className="nh-detail-value">
                 {leftSurface?.preflight_verification_enabled ? 'Enabled' : 'Disabled'}
               </p>
             </div>
-            <div className="rounded-lg bg-gray-800/50 p-3">
-              <p className="text-gray-400">Display scale mode</p>
-              <p className="text-white mt-1">{leftSurface?.display_scale_mode ?? 'N/A'}</p>
+            <div className="nh-mini-stat">
+              <p className="nh-detail-label">Display scale mode</p>
+              <p className="nh-detail-value">{leftSurface?.display_scale_mode ?? 'N/A'}</p>
             </div>
-            <div className="rounded-lg bg-gray-800/50 p-3">
-              <p className="text-gray-400">Actual placement</p>
-              <p className="text-white mt-1">
+            <div className="nh-mini-stat">
+              <p className="nh-detail-label">Actual placement</p>
+              <p className="nh-detail-value">
                 {leftSurface &&
                 leftSurface.actual_window_origin_x !== null &&
                 leftSurface.actual_window_origin_y !== null &&
@@ -293,168 +585,43 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-        </div>
-      </div>
+        </article>
 
-      {/* Status Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-blue-600/20 rounded-lg">
-              <Cpu className="h-5 w-5 text-blue-400" />
+        <article className="nh-intel-card nh-intel-card-channels">
+          <div className="nh-intel-head">
+            <div className="nh-intel-icon">
+              <Radio className="h-5 w-5" />
             </div>
-            <span className="text-sm text-gray-400">Provider / Model</span>
-          </div>
-          <p className="text-lg font-semibold text-white truncate">
-            {status.provider ?? 'Unknown'}
-          </p>
-          <p className="text-sm text-gray-400 truncate">{status.model}</p>
-        </div>
-
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-green-600/20 rounded-lg">
-              <Clock className="h-5 w-5 text-green-400" />
+            <div>
+              <p className="nh-intel-kicker">Operational intelligence</p>
+              <h3 className="nh-intel-title">Live Channels</h3>
             </div>
-            <span className="text-sm text-gray-400">Uptime</span>
-          </div>
-          <p className="text-lg font-semibold text-white">
-            {formatUptime(status.uptime_seconds)}
-          </p>
-          <p className="text-sm text-gray-400">Since last restart</p>
-        </div>
-
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-purple-600/20 rounded-lg">
-              <Globe className="h-5 w-5 text-purple-400" />
-            </div>
-            <span className="text-sm text-gray-400">Gateway Port</span>
-          </div>
-          <p className="text-lg font-semibold text-white">
-            :{status.gateway_port}
-          </p>
-          <p className="text-sm text-gray-400">Locale: {status.locale}</p>
-        </div>
-
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 bg-orange-600/20 rounded-lg">
-              <Database className="h-5 w-5 text-orange-400" />
-            </div>
-            <span className="text-sm text-gray-400">Memory Backend</span>
-          </div>
-          <p className="text-lg font-semibold text-white capitalize">
-            {status.memory_backend}
-          </p>
-          <p className="text-sm text-gray-400">
-            Paired: {status.paired ? 'Yes' : 'No'}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Cost Widget */}
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-2 mb-4">
-            <DollarSign className="h-5 w-5 text-blue-400" />
-            <h2 className="text-base font-semibold text-white">Cost Overview</h2>
-          </div>
-          <div className="space-y-4">
-            {[
-              { label: 'Session', value: cost.session_cost_usd, color: 'bg-blue-500' },
-              { label: 'Daily', value: cost.daily_cost_usd, color: 'bg-green-500' },
-              { label: 'Monthly', value: cost.monthly_cost_usd, color: 'bg-purple-500' },
-            ].map(({ label, value, color }) => (
-              <div key={label}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-400">{label}</span>
-                  <span className="text-white font-medium">{formatUSD(value)}</span>
-                </div>
-                <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${color}`}
-                    style={{ width: `${Math.max((value / maxCost) * 100, 2)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 pt-3 border-t border-gray-800 flex justify-between text-sm">
-            <span className="text-gray-400">Total Tokens</span>
-            <span className="text-white">{cost.total_tokens.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between text-sm mt-1">
-            <span className="text-gray-400">Requests</span>
-            <span className="text-white">{cost.request_count.toLocaleString()}</span>
-          </div>
-        </div>
-
-        {/* Active Channels */}
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-2 mb-4">
-            <Radio className="h-5 w-5 text-blue-400" />
-            <h2 className="text-base font-semibold text-white">Active Channels</h2>
           </div>
           <div className="space-y-2">
             {Object.entries(status.channels).length === 0 ? (
-              <p className="text-sm text-gray-500">No channels configured</p>
+              <p className="text-sm text-white/45">No channels configured</p>
             ) : (
               Object.entries(status.channels).map(([name, active]) => (
-                <div
-                  key={name}
-                  className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-800/50"
-                >
-                  <span className="text-sm text-white capitalize">{name}</span>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-block h-2.5 w-2.5 rounded-full ${
-                        active ? 'bg-green-500' : 'bg-gray-500'
-                      }`}
-                    />
-                    <span className="text-xs text-gray-400">
-                      {active ? 'Active' : 'Inactive'}
-                    </span>
+                <div key={name} className="nh-channel-row">
+                  <div className="flex items-center gap-3">
+                    {active ? (
+                      <CheckCircle2 className="h-4 w-4 text-lime-300" />
+                    ) : (
+                      <Activity className="h-4 w-4 text-white/35" />
+                    )}
+                    <span className="text-sm text-white capitalize">{name}</span>
                   </div>
+                  <span
+                    className={`nh-channel-pill ${active ? 'nh-channel-pill-on' : 'nh-channel-pill-off'}`}
+                  >
+                    {active ? 'Active' : 'Inactive'}
+                  </span>
                 </div>
               ))
             )}
           </div>
-        </div>
-
-        {/* Health Grid */}
-        <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="h-5 w-5 text-blue-400" />
-            <h2 className="text-base font-semibold text-white">Component Health</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {Object.entries(status.health.components).length === 0 ? (
-              <p className="text-sm text-gray-500 col-span-2">No components reporting</p>
-            ) : (
-              Object.entries(status.health.components).map(([name, comp]) => (
-                <div
-                  key={name}
-                  className={`rounded-lg p-3 border ${healthBorder(comp.status)} bg-gray-800/50`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`inline-block h-2 w-2 rounded-full ${healthColor(comp.status)}`} />
-                    <span className="text-sm font-medium text-white capitalize truncate">
-                      {name}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 capitalize">{comp.status}</p>
-                  {comp.restart_count > 0 && (
-                    <p className="text-xs text-yellow-400 mt-1">
-                      Restarts: {comp.restart_count}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+        </article>
+      </section>
     </div>
   );
 }

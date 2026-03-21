@@ -95,8 +95,8 @@ export default function Cron() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300">
+      <div className="nh-page-shell">
+        <div className="nh-page-note nh-page-note-danger text-rose-200">
           Failed to load cron jobs: {error}
         </div>
       </div>
@@ -105,35 +105,35 @@ export default function Cron() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="nh-page-shell flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Clock className="h-5 w-5 text-blue-400" />
-          <h2 className="text-base font-semibold text-white">
-            Scheduled Tasks ({jobs.length})
-          </h2>
+    <div className="nh-page-shell">
+      <section className="nh-page-hero">
+        <div>
+          <p className="nh-page-kicker">Automation timing</p>
+          <h2 className="nh-page-title">Scheduled Jobs</h2>
+          <p className="nh-page-subtitle">
+            Coordinate background routines and recurring station behavior without breaking the
+            operator rhythm.
+          </p>
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="nh-button-primary"
         >
           <Plus className="h-4 w-4" />
           Add Job
         </button>
-      </div>
+      </section>
 
-      {/* Add Job Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md mx-4">
+        <div className="nh-modal-backdrop">
+          <div className="nh-modal-card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-white">Add Cron Job</h3>
               <button
@@ -163,7 +163,7 @@ export default function Cron() {
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g. Daily cleanup"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="nh-input px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -175,7 +175,7 @@ export default function Cron() {
                   value={formSchedule}
                   onChange={(e) => setFormSchedule(e.target.value)}
                   placeholder="e.g. 0 0 * * * (cron expression)"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="nh-input px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -187,7 +187,7 @@ export default function Cron() {
                   value={formCommand}
                   onChange={(e) => setFormCommand(e.target.value)}
                   placeholder="e.g. cleanup --older-than 7d"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="nh-input px-3 py-2 text-sm"
                 />
               </div>
             </div>
@@ -198,14 +198,14 @@ export default function Cron() {
                   setShowForm(false);
                   setFormError(null);
                 }}
-                className="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
+                className="nh-button-ghost"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAdd}
                 disabled={submitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
+                className="nh-button-primary"
               >
                 {submitting ? 'Adding...' : 'Add Job'}
               </button>
@@ -216,12 +216,14 @@ export default function Cron() {
 
       {/* Jobs Table */}
       {jobs.length === 0 ? (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 text-center">
-          <Clock className="h-10 w-10 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-400">No scheduled tasks configured.</p>
+        <div className="nh-panel nh-empty-state">
+          <span className="nh-icon-well">
+            <Clock className="h-5 w-5" />
+          </span>
+          <p>No scheduled tasks configured.</p>
         </div>
       ) : (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-x-auto">
+        <div className="nh-panel nh-table-shell overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">

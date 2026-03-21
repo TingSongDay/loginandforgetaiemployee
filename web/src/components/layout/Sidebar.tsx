@@ -28,19 +28,18 @@ const navItems = [
 
 export default function Sidebar() {
   return (
-    <aside className="fixed top-0 left-0 h-screen w-60 bg-gray-900 flex flex-col border-r border-gray-800">
-      {/* Logo / Title */}
-      <div className="flex items-center gap-2 px-5 py-5 border-b border-gray-800">
-        <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
-          ZC
+    <aside className="nh-shell-sidebar">
+      <div className="nh-sidebar-brand">
+        <div className="nh-sidebar-logo">
+          NH
         </div>
-        <span className="text-lg font-semibold text-white tracking-wide">
-          ZeroClaw
-        </span>
+        <div>
+          <p className="nh-sidebar-kicker">Digital human station</p>
+          <p className="nh-sidebar-title">NeoHuman</p>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+      <nav className="nh-sidebar-nav">
         {navItems.map(({ to, icon: Icon, labelKey }) => (
           <NavLink
             key={to}
@@ -48,14 +47,14 @@ export default function Sidebar() {
             end={to === '/'}
             className={({ isActive }) =>
               [
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+                'nh-sidebar-link',
+                isActive ? 'nh-sidebar-link-active' : '',
               ].join(' ')
             }
           >
-            <Icon className="h-5 w-5 flex-shrink-0" />
+            <span className="nh-sidebar-link-icon">
+              <Icon className="h-5 w-5 flex-shrink-0" />
+            </span>
             <span>{t(labelKey)}</span>
           </NavLink>
         ))}

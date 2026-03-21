@@ -77,17 +77,20 @@ export default function Doctor() {
     }, {}) ?? {};
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Stethoscope className="h-5 w-5 text-blue-400" />
-          <h2 className="text-base font-semibold text-white">Diagnostics</h2>
+    <div className="nh-page-shell">
+      <section className="nh-page-hero">
+        <div>
+          <p className="nh-page-kicker">System vitality</p>
+          <h2 className="nh-page-title">Doctor</h2>
+          <p className="nh-page-subtitle">
+            Inspect the health envelope of the NeoHuman station, from component status to
+            operator-facing recovery signals.
+          </p>
         </div>
         <button
           onClick={handleRun}
           disabled={loading}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+          className="nh-button-primary"
         >
           {loading ? (
             <>
@@ -101,18 +104,16 @@ export default function Doctor() {
             </>
           )}
         </button>
-      </div>
+      </section>
 
-      {/* Error */}
       {error && (
-        <div className="rounded-lg bg-red-900/30 border border-red-700 p-4 text-red-300">
+        <div className="nh-page-note nh-page-note-danger text-rose-200">
           {error}
         </div>
       )}
 
-      {/* Loading spinner */}
       {loading && (
-        <div className="flex flex-col items-center justify-center py-16">
+        <div className="nh-panel nh-empty-state py-16">
           <Loader2 className="h-10 w-10 text-blue-500 animate-spin mb-4" />
           <p className="text-gray-400">Running diagnostics...</p>
           <p className="text-sm text-gray-500 mt-1">
@@ -124,8 +125,7 @@ export default function Doctor() {
       {/* Results */}
       {results && !loading && (
         <>
-          {/* Summary Bar */}
-          <div className="flex items-center gap-4 bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <div className="nh-panel flex items-center gap-4 p-4">
             <div className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-400" />
               <span className="text-sm text-white font-medium">
@@ -171,7 +171,6 @@ export default function Doctor() {
             </div>
           </div>
 
-          {/* Grouped Results */}
           {Object.entries(grouped)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([category, items]) => (
@@ -183,7 +182,7 @@ export default function Doctor() {
                   {items.map((result, idx) => (
                     <div
                       key={`${category}-${idx}`}
-                      className={`flex items-start gap-3 rounded-lg border p-3 ${severityBorder(
+                      className={`nh-panel-soft flex items-start gap-3 rounded-lg border p-3 ${severityBorder(
                         result.severity,
                       )} ${severityBg(result.severity)}`}
                     >
@@ -204,11 +203,13 @@ export default function Doctor() {
 
       {/* Empty state */}
       {!results && !loading && !error && (
-        <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-          <Stethoscope className="h-12 w-12 text-gray-600 mb-4" />
-          <p className="text-lg font-medium">System Diagnostics</p>
+        <div className="nh-panel nh-empty-state py-16">
+          <span className="nh-icon-well h-14 w-14 rounded-[1.25rem]">
+            <Stethoscope className="h-7 w-7" />
+          </span>
+          <p className="text-lg font-medium text-white">System Diagnostics</p>
           <p className="text-sm mt-1">
-            Click "Run Diagnostics" to check your ZeroClaw installation.
+            Click "Run Diagnostics" to check your NeoHuman installation.
           </p>
         </div>
       )}

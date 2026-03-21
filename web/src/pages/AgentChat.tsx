@@ -150,22 +150,38 @@ export default function AgentChat() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-      {/* Connection status bar */}
+    <div className="nh-page-shell h-[calc(100vh-6.5rem)]">
+      <section className="nh-page-hero">
+        <div>
+          <p className="nh-page-kicker">NeoHuman conversation core</p>
+          <h2 className="nh-page-title">Agent</h2>
+          <p className="nh-page-subtitle">
+            Direct the digital human in real time. This channel is the live command surface for
+            strategy, corrections, and next-step guidance.
+          </p>
+        </div>
+        <div className={`nh-state-pill ${connected ? 'nh-state-pill-live' : 'nh-state-pill-danger'}`}>
+          <span className="nh-state-dot" />
+          {connected ? 'Connected' : 'Disconnected'}
+        </div>
+      </section>
+
+      <div className="nh-panel flex flex-1 min-h-0 flex-col overflow-hidden">
       {error && (
-        <div className="px-4 py-2 bg-red-900/30 border-b border-red-700 flex items-center gap-2 text-sm text-red-300">
+        <div className="flex items-center gap-2 border-b border-white/8 px-4 py-3 text-sm text-rose-200/90 bg-rose-500/10">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <Bot className="h-12 w-12 mb-3 text-gray-600" />
-            <p className="text-lg font-medium">ZeroClaw Agent</p>
-            <p className="text-sm mt-1">Send a message to start the conversation</p>
+          <div className="nh-empty-state h-full">
+            <div className="nh-icon-well h-14 w-14 rounded-[1.25rem]">
+              <Bot className="h-7 w-7" />
+            </div>
+            <p className="text-lg font-medium text-white">NeoHuman Agent</p>
+            <p className="text-sm">Send a message to start the conversation.</p>
           </div>
         )}
 
@@ -179,8 +195,8 @@ export default function AgentChat() {
             <div
               className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                 msg.role === 'user'
-                  ? 'bg-blue-600'
-                  : 'bg-gray-700'
+                  ? 'bg-cyan-500/90'
+                  : 'bg-white/10'
               }`}
             >
               {msg.role === 'user' ? (
@@ -192,14 +208,14 @@ export default function AgentChat() {
             <div
               className={`max-w-[75%] rounded-xl px-4 py-3 ${
                 msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-800 text-gray-100 border border-gray-700'
+                  ? 'bg-cyan-500/90 text-white'
+                  : 'border border-white/10 bg-white/6 text-gray-100'
               }`}
             >
               <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
               <p
                 className={`text-xs mt-1 ${
-                  msg.role === 'user' ? 'text-blue-200' : 'text-gray-500'
+                  msg.role === 'user' ? 'text-cyan-100/80' : 'text-white/35'
                 }`}
               >
                 {msg.timestamp.toLocaleTimeString()}
@@ -210,10 +226,10 @@ export default function AgentChat() {
 
         {typing && (
           <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
               <Bot className="h-4 w-4 text-white" />
             </div>
-            <div className="bg-gray-800 border border-gray-700 rounded-xl px-4 py-3">
+            <div className="rounded-xl border border-white/10 bg-white/6 px-4 py-3">
               <div className="flex items-center gap-1">
                 <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -227,8 +243,7 @@ export default function AgentChat() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
-      <div className="border-t border-gray-800 bg-gray-900 p-4">
+      <div className="border-t border-white/8 bg-white/4 p-4">
         <div className="flex items-center gap-3 max-w-4xl mx-auto">
           <div className="flex-1 relative">
             <input
@@ -239,13 +254,13 @@ export default function AgentChat() {
               onKeyDown={handleKeyDown}
               placeholder={connected ? 'Type a message...' : 'Connecting...'}
               disabled={!connected}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+              className="nh-input px-4 py-3 text-sm disabled:opacity-50"
             />
           </div>
           <button
             onClick={handleSend}
             disabled={!connected || !input.trim()}
-            className="flex-shrink-0 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl p-3 transition-colors"
+            className="nh-button-primary flex-shrink-0 rounded-xl p-3 disabled:text-white/50"
           >
             <Send className="h-5 w-5" />
           </button>
@@ -260,6 +275,7 @@ export default function AgentChat() {
             {connected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
+      </div>
       </div>
     </div>
   );
